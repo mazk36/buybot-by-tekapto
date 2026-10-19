@@ -1,0 +1,4 @@
+import { RotateCcw, X } from 'lucide-react'
+export function ResetDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel() }}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-heading"><button className="icon-button modal-close" aria-label="Cerrar" onClick={onCancel}><X size={18} /></button><div className="reset-icon"><RotateCcw size={20} /></div><h2 id="reset-heading">¿Deseas reiniciar la demostración?</h2><p>Esto eliminará los cambios actuales y restaurará la base ficticia de 25 prospectos. Esta acción no se puede deshacer.</p><div className="modal-actions"><button className="outline-button" onClick={onCancel}>Cancelar</button><button className="danger-button" onClick={onConfirm}><RotateCcw size={14} /> Reiniciar demo</button></div></section></div>
+}
