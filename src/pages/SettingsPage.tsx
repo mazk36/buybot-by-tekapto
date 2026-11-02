@@ -1,59 +1,97 @@
-import { useState } from 'react'
-import { Bell, CheckCircle2, LayoutDashboard, LockKeyhole, Moon, RotateCcw, ShieldCheck } from 'lucide-react'
-import { PageTitle, type IconType } from '../components/shared'
-import { DEFAULT_MESSAGE_TEMPLATE, makeMessage } from '../utils/format'
+import { useEffect, useState } from 'react'
+import { Database, LogOut, Moon, Save, Sun } from 'lucide-react'
+import { api } from '../api'
+import type { Settings, User } from '../api'
+import { Button, Field, PageHeader, Spinner, useToast } from '../ui'
+import { useUser } from '../store'
+import { downloadUrl, renderPreview } from '../format'
 
-interface SettingsPageProps {
-  onReset: () => void
-  onProfile: () => void
-  darkMode: boolean
-  onToggleTheme: () => void
-  messageTemplate: string
-  onMessageTemplateChange: (template: string) => void
-}
+export function SettingsPage({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
+  const toast = useToast()
+  const { user, setUser, logout } = useUser()
+  const [saved, setSaved] = useState<Settings | null>(null)
+  const [form, setForm] = useState<Settings | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-export function SettingsPage({ onReset, onProfile, darkMode, onToggleTheme, messageTemplate, onMessageTemplateChange }: SettingsPageProps) {
-  const [notifications, setNotifications] = useState(true)
-  const [compact, setCompact] = useState(false)
-  const previewMessage = makeMessage('Carlos Mendoza', 32500, 11.9, messageTemplate)
+  useEffect(() => { api<Settings>('GET', '/settings').then((s) => { setSaved(s); setForm(s) }).catch((e) => setError(e.message)) }, [])
+  if (!form || !saved) return error ? <p className="field-error">{error}</p> : <Spinner />
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+  const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setForm({ ...form, [k]: v })
+  const num = (k: 'dailyLimit' | 'delayMin' | 'delayMax') => (e: { target: { value: string } }) => set(k, e.target.value === '' ? (0 as never) : (Number(e.target.value) as never))
+
+  const save = async () => {
+    setBusy(true); setError('')
+    try { const s = await api<Settings>('PUT', '/settings', form); const merged = { ...form, ...s }; setSaved(merged); setForm(merged); toast('Configuración guardada') }
+    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar') } finally { setBusy(false) }
+  }
 
   return <>
-    <PageTitle eyebrow="PREFERENCIAS" title="Configuración" subtitle="Administra las preferencias de tu espacio de trabajo." />
-    <div className="settings-layout">
-      <div className="settings-main">
-        <section className="panel settings-panel">
-          <div className="panel-heading"><div><div className="eyebrow">ESPACIO DE TRABAJO</div><h2>Preferencias generales</h2></div></div>
-          <SettingRow icon={Moon} title="Modo oscuro" text="Cambia la apariencia de toda la aplicación." checked={darkMode} onChange={onToggleTheme} />
-          <SettingRow icon={Bell} title="Notificaciones de actividad" text="Recibe avisos dentro de la aplicación sobre el flujo de trabajo." checked={notifications} onChange={() => setNotifications(!notifications)} />
-          <SettingRow icon={LayoutDashboard} title="Vista compacta de tablas" text="Reduce el espacio entre filas para mostrar más registros." checked={compact} onChange={() => setCompact(!compact)} />
-          <div className="setting-row"><span className="setting-icon"><LockKeyhole size={17} /></span><div className="setting-copy"><strong>Almacenamiento</strong><span>Los datos se guardan localmente en este navegador.</span></div><span className="local-storage-tag"><span className="online-dot" /> Activo</span></div>
-        </section>
+    <PageHeader eyebrow="PREFERENCIAS" title="Configuración" subtitle="Mensaje, ritmo de envío y cuenta."
+      actions={<Button variant="primary" icon={<Save size={16} />} busy={busy} disabled={!dirty} onClick={() => void save()}>Guardar cambios</Button>} />
+    {error && <p className="field-error" role="alert">{error}</p>}
 
-        <section className="panel settings-panel message-template-panel">
-          <div className="panel-heading template-heading">
-            <div><div className="eyebrow">MENSAJES</div><h2>Plantilla de contacto</h2><p>Una misma estructura para todos los prospectos. Las variables se completan con sus datos.</p></div>
-            <button className="outline-button mini-button" onClick={() => onMessageTemplateChange(DEFAULT_MESSAGE_TEMPLATE)}>Restaurar predeterminada</button>
-          </div>
-          <label className="template-label" htmlFor="message-template">Mensaje personalizado</label>
-          <textarea id="message-template" className="message-template-input" value={messageTemplate} onChange={(event) => onMessageTemplateChange(event.target.value)} spellCheck />
-          <div className="template-variables"><span>Variables disponibles</span><code>[nombre]</code><code>[tasa]</code><code>[monto]</code></div>
-          <p className="template-help">Escribe las variables entre corchetes donde quieras insertar el dato. Se guardará automáticamente en este navegador.</p>
-          <div className="template-preview"><div className="template-preview-heading"><span>VISTA PREVIA</span><small>Ejemplo con Carlos Mendoza</small></div><p>{previewMessage}</p></div>
-        </section>
+    <div className="settings-grid">
+      <section className="card">
+        <h3 className="card-title">Mensaje</h3>
+        <Field label="Plantilla" hint="Variables: [nombre] [monto] [tasa]. Alternativas al azar: {Hola|Buen día} (evita mensajes idénticos).">
+          <textarea rows={8} value={form.messageTemplate} onChange={(e) => set('messageTemplate', e.target.value)} maxLength={1500} />
+        </Field>
+        <div className="btn-row"><Button variant="ghost" onClick={() => set('messageTemplate', saved.defaultTemplate)}>Restaurar predeterminada</Button></div>
+        <div className="wa-bubble-wrap"><span className="muted-label">VISTA PREVIA</span><div className="wa-bubble">{renderPreview(form.messageTemplate)}<small>12:43 ✓✓</small></div></div>
+      </section>
 
-        <section className="panel settings-panel account-panel">
-          <div className="panel-heading"><div><div className="eyebrow">CUENTA</div><h2>Perfil de usuario</h2></div></div>
-          <div className="profile-row"><div className="avatar avatar-red">C</div><div><strong>Cristina</strong><span>Asesora comercial · Scotia Asesores</span></div><button className="outline-button mini-button" onClick={onProfile}>Editar perfil</button></div>
-        </section>
-      </div>
-      <aside className="settings-aside">
-        <section className="settings-info-card"><div className="settings-info-icon"><ShieldCheck size={19} /></div><h3>Tu información está protegida</h3><p>Esta aplicación es un prototipo de demostración. Toda la información se conserva únicamente en este navegador.</p><div><CheckCircle2 size={14} /> Sin conexiones externas</div><div><CheckCircle2 size={14} /> Sin datos bancarios reales</div></section>
-        <section className="panel reset-settings"><h3>Restaurar demostración</h3><p>Vuelve a cargar la base inicial y limpia todo el progreso actual.</p><button className="outline-button" onClick={onReset}><RotateCcw size={14} /> Reiniciar demo</button></section>
-      </aside>
+      <section className="card">
+        <h3 className="card-title">Ritmo de envío</h3>
+        <div className="form-grid">
+          <Field label="Límite diario" hint="Mensajes por día"><input type="number" min={1} max={1000} value={form.dailyLimit || ''} onChange={num('dailyLimit')} /></Field>
+          <div />
+          <Field label="Pausa mínima (s)" hint="Entre un mensaje y otro"><input type="number" min={5} max={600} value={form.delayMin || ''} onChange={num('delayMin')} /></Field>
+          <Field label="Pausa máxima (s)"><input type="number" min={5} max={1800} value={form.delayMax || ''} onChange={num('delayMax')} /></Field>
+          <Field label="Enviar desde"><input type="time" value={form.windowStart} onChange={(e) => set('windowStart', e.target.value)} /></Field>
+          <Field label="Hasta"><input type="time" value={form.windowEnd} onChange={(e) => set('windowEnd', e.target.value)} /></Field>
+        </div>
+        <div className="note">Pausas largas y aleatorias, y un límite diario razonable, reducen el riesgo de que WhatsApp bloquee el número. Se recomienda empezar con pocos mensajes e ir subiendo.</div>
+      </section>
+
+      <section className="card">
+        <h3 className="card-title">Mi cuenta</h3>
+        <ProfileForm user={user} onUser={setUser} />
+        <PasswordForm />
+        <div className="btn-row">
+          <Button icon={dark ? <Sun size={16} /> : <Moon size={16} />} onClick={onToggleTheme}>{dark ? 'Modo claro' : 'Modo oscuro'}</Button>
+          <Button variant="danger" icon={<LogOut size={16} />} onClick={() => void logout()}>Cerrar sesión</Button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3 className="card-title">Datos y respaldo</h3>
+        <p className="muted-text">Toda la información vive en un archivo local del servidor (<code>data/buybot.db</code>). BuyBot guarda un respaldo automático cada día (últimos 14) y puedes descargar uno cuando quieras.</p>
+        <Button icon={<Database size={16} />} onClick={() => downloadUrl('/api/backup')}>Descargar respaldo</Button>
+      </section>
     </div>
   </>
 }
 
-function SettingRow({ icon: Icon, title, text, checked, onChange }: { icon: IconType; title: string; text: string; checked: boolean; onChange: () => void }) {
-  return <div className="setting-row"><span className="setting-icon"><Icon size={17} /></span><div className="setting-copy"><strong>{title}</strong><span>{text}</span></div><button className={`switch ${checked ? 'checked' : ''}`} aria-label={`${checked ? 'Desactivar' : 'Activar'} ${title}`} aria-pressed={checked} onClick={onChange}><span /></button></div>
+function ProfileForm({ user, onUser }: { user: User; onUser: (u: User) => void }) {
+  const toast = useToast()
+  const [name, setName] = useState(user.name)
+  return <div className="inline-form">
+    <Field label="Nombre"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+    <Field label="Correo"><input value={user.email} disabled /></Field>
+    <Button disabled={name.trim() === user.name} onClick={async () => { try { const r = await api<{ user: User }>('PATCH', '/auth/profile', { name }); onUser(r.user); toast('Nombre actualizado') } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') } }}>Guardar nombre</Button>
+  </div>
+}
+
+function PasswordForm() {
+  const toast = useToast()
+  const [current, setCurrent] = useState(''); const [next, setNext] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
+  return <form className="inline-form" onSubmit={async (e) => {
+    e.preventDefault(); setBusy(true); setError('')
+    try { await api('POST', '/auth/password', { current, next }); toast('Contraseña actualizada'); setCurrent(''); setNext('') } catch (err) { setError(err instanceof Error ? err.message : 'Error') } finally { setBusy(false) }
+  }}>
+    <Field label="Contraseña actual"><input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" /></Field>
+    <Field label="Nueva contraseña" hint="Mínimo 8 caracteres" error={error}><input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" /></Field>
+    <Button type="submit" busy={busy} disabled={!current || next.length < 8}>Cambiar contraseña</Button>
+  </form>
 }

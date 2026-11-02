@@ -1,92 +1,108 @@
-import { useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
-import { ArrowDownToLine, Check, CheckCircle2, CircleHelp, CloudUpload, Database, FileSpreadsheet, ListChecks, LoaderCircle, LockKeyhole } from 'lucide-react'
-import type { Prospect } from '../types'
-import { PageTitle } from '../components/shared'
-import { deterministicEligibility, formatPhone } from '../utils/format'
-interface ImportRow { dni: string; name: string; phone: string; valid: boolean; duplicate: boolean }
+import { useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent } from 'react'
+import { CheckCircle2, CloudUpload, FileSpreadsheet, TriangleAlert } from 'lucide-react'
+import { api } from '../api'
+import { Button, PageHeader, Spinner, useToast } from '../ui'
+import { useStats } from '../store'
 
-export function ImportPage({ prospects, onImport, onDemo }: { prospects: Prospect[]; onImport: (records: Prospect[]) => void; onDemo: () => void }) {
-  const [filename, setFilename] = useState('')
-  const [rows, setRows] = useState<ImportRow[]>([])
-  const [error, setError] = useState('')
+interface Row { dni: string; name: string; phone: string; offerAmount: string; rate: string; line: number; problem?: string }
+interface Result { created: number; duplicates: number; invalid: number; duplicateRows: { row: number; reason: string }[]; invalidRows: { row: number; reason: string }[] }
+
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+const ALIASES = {
+  dni: ['dni', 'documento', 'numerodocumento', 'nrodocumento', 'numerodedocumento'],
+  name: ['nombre', 'nombres', 'cliente', 'nombrecompleto', 'name'],
+  phone: ['whatsapp', 'telefono', 'celular', 'phone', 'numerodetelefono', 'movil'],
+  offerAmount: ['monto', 'montooferta', 'montoofertado', 'oferta', 'importe'],
+  rate: ['tasa', 'tasareferencial', 'tcea', 'tea'],
+} as const
+
+export function ImportPage({ onDone }: { onDone: () => void }) {
+  const toast = useToast()
+  const { refresh } = useStats()
+  const input = useRef<HTMLInputElement>(null)
+  const [file, setFile] = useState('')
+  const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const existingDnis = useMemo(() => new Set(prospects.map((item) => item.dni)), [prospects])
-  const existingPhones = useMemo(() => new Set(prospects.map((item) => normalizePhone(item.phone))), [prospects])
-  const newRows = rows.filter((row) => row.valid && !row.duplicate)
-  const duplicateCount = rows.filter((row) => row.duplicate).length
-  const invalidCount = rows.filter((row) => !row.valid).length
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<Result | null>(null)
+  const [drag, setDrag] = useState(false)
 
-  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFilename(file.name)
-    setError('')
-    setLoading(true)
+  const parse = async (f: File) => {
+    setError(''); setResult(null); setRows([]); setFile(f.name); setLoading(true)
     try {
+      if (f.size > 10 * 1024 * 1024) throw new Error('El archivo supera los 10 MB.')
       const XLSX = await import('xlsx')
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-      if (!firstSheet) throw new Error('No se encontró una hoja para importar.')
-      const source = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' })
-      const seenDnis = new Set(existingDnis)
-      const seenPhones = new Set(existingPhones)
-      const parsed = source.map((item): ImportRow => {
-        const record = Object.fromEntries(Object.entries(item).map(([key, value]) => [normalizeHeader(key), String(value ?? '').trim()]))
-        const dni = firstValue(record, ['dni', 'documento', 'numerodedocumento', 'nrodocumento'])
-        const name = firstValue(record, ['nombre', 'nombres', 'cliente', 'name'])
-        const phone = firstValue(record, ['whatsapp', 'telefono', 'celular', 'phone', 'numerodetelefono'])
-        const normalizedPhone = normalizePhone(phone)
-        const valid = Boolean(dni && name && normalizedPhone && /^\d{8}$/.test(dni) && /^\d{9}$/.test(normalizedPhone))
-        const duplicate = Boolean((dni && seenDnis.has(dni)) || (normalizedPhone && seenPhones.has(normalizedPhone)))
-        if (dni) seenDnis.add(dni)
-        if (normalizedPhone) seenPhones.add(normalizedPhone)
-        return { dni, name, phone: normalizedPhone, valid, duplicate }
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      if (!sheet) throw new Error('No se encontró ninguna hoja en el archivo.')
+      const source = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false })
+      if (!source.length) throw new Error('El archivo no tiene filas.')
+      const pick = (rec: Record<string, string>, keys: readonly string[]) => { for (const k of keys) if (rec[k]) return rec[k]; return '' }
+      const parsed = source.map((item, i): Row => {
+        const rec = Object.fromEntries(Object.entries(item).map(([k, v]) => [norm(k), String(v ?? '').trim()]))
+        const row: Row = { line: i + 2, dni: pick(rec, ALIASES.dni), name: pick(rec, ALIASES.name), phone: pick(rec, ALIASES.phone), offerAmount: pick(rec, ALIASES.offerAmount), rate: pick(rec, ALIASES.rate) }
+        const dni = row.dni.replace(/\D/g, '').padStart(row.dni ? 8 : 0, '0'); row.dni = dni
+        const phone = row.phone.replace(/\D/g, '')
+        if (!/^\d{8}$/.test(row.dni)) row.problem = 'DNI inválido (8 dígitos)'
+        else if (row.name.length < 2) row.problem = 'Falta el nombre'
+        else if (!/^(51)?9\d{8}$/.test(phone.replace(/^00/, ''))) row.problem = 'WhatsApp inválido'
+        return row
       })
       setRows(parsed)
-      if (!source.length) setError('El archivo no contiene registros para importar.')
-    } catch (caught) {
-      setRows([])
-      setError(caught instanceof Error ? caught.message : 'No pudimos leer el archivo. Verifica el formato e inténtalo nuevamente.')
-    } finally {
-      setLoading(false)
-      event.target.value = ''
-    }
+      if (!parsed.some((r) => !r.problem)) setError('No encontramos filas válidas. Revisa que existan las columnas DNI, Nombre y WhatsApp.')
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo leer el archivo.') } finally { setLoading(false) }
   }
 
-  const importNow = () => {
-    const imported = newRows.map((row, index): Prospect => ({
-      id: `import-${Date.now()}-${index}`,
-      dni: row.dni,
-      name: row.name,
-      phone: row.phone,
-      status: 'pending',
-      offerAmount: null, rate: null, lastReview: null, nextReview: null, contactDate: null, message: null,
-      mockEligibility: deterministicEligibility(row.dni), eligibility: null,
-    }))
-    onImport(imported)
-    setRows([])
-    setFilename('')
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) void parse(f); e.target.value = '' }
+  const onDrop = (e: DragEvent) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) void parse(f) }
+  const valid = rows.filter((r) => !r.problem)
+  const invalid = rows.filter((r) => r.problem)
+  const missingData = valid.filter((r) => !r.offerAmount || !r.rate).length
+
+  const send = async () => {
+    setSending(true)
+    try {
+      const res = await api<Result>('POST', '/prospects/import', { rows: valid.map(({ dni, name, phone, offerAmount, rate }) => ({ dni, name, phone, offerAmount: offerAmount || undefined, rate: rate || undefined })) })
+      setResult(res); setRows([]); void refresh()
+      toast(`${res.created} prospecto(s) importados`)
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo importar', 'error') } finally { setSending(false) }
   }
 
   return <>
-    <PageTitle eyebrow="GESTIÓN DE BASES" title="Importar prospectos" subtitle="Carga una lista de clientes para iniciar una nueva gestión." action={<button className="outline-button" onClick={onDemo}><Database size={15} /> Cargar datos de demostración</button>} />
-    <div className="import-layout">
-      <div className="import-main">
-        <section className={`upload-panel ${rows.length ? 'has-file' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file && inputRef.current) { const transfer = new DataTransfer(); transfer.items.add(file); inputRef.current.files = transfer.files; inputRef.current.dispatchEvent(new Event('change', { bubbles: true })) } }}>
-          <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} hidden />
-          <div className="upload-icon"><CloudUpload size={24} /></div><h2>{loading ? 'Leyendo archivo…' : filename || 'Arrastra tu archivo aquí'}</h2><p>{loading ? 'Estamos revisando las columnas y detectando duplicados.' : filename ? 'Archivo listo para importar' : 'o selecciona un archivo desde tu equipo'}</p><button className="outline-button" onClick={() => inputRef.current?.click()} disabled={loading}>{loading ? <LoaderCircle className="spin" size={15} /> : <ArrowDownToLine size={15} />}{filename ? 'Cambiar archivo' : 'Seleccionar archivo'}</button><div className="file-types"><span><CheckCircle2 size={13} /> .xlsx</span><span><CheckCircle2 size={13} /> .xls</span><span><CheckCircle2 size={13} /> .csv</span><span>Máximo 10 MB</span></div>
-        </section>
-        {error && <div className="inline-error"><CircleHelp size={16} />{error}</div>}
-        {rows.length > 0 && <section className="panel import-preview"><div className="panel-heading"><div><div className="eyebrow">VISTA PREVIA</div><h2>{filename}</h2></div><span className="records-found">{rows.length} registros encontrados</span></div><div className="import-summary"><div><strong>{newRows.length}</strong><span>nuevos</span></div><div><strong>{duplicateCount}</strong><span>duplicados</span></div><div><strong>{invalidCount}</strong><span>inválidos</span></div></div><div className="table-scroll"><table className="data-table preview-table"><thead><tr><th>Nombre</th><th>DNI</th><th>WhatsApp</th><th>Resultado</th></tr></thead><tbody>{rows.slice(0, 6).map((row, index) => <tr key={`${row.dni}-${index}`}><td>{row.name || '—'}</td><td className="mono-cell">{row.dni || '—'}</td><td>{row.phone ? formatPhone(row.phone) : '—'}</td><td>{!row.valid ? <span className="import-row-bad">Inválido</span> : row.duplicate ? <span className="import-row-duplicate">Duplicado</span> : <span className="import-row-ok"><Check size={12} /> Nuevo</span>}</td></tr>)}</tbody></table></div>{rows.length > 6 && <div className="preview-more">Mostrando 6 de {rows.length} registros</div>}<div className="import-action-row"><span>{newRows.length} prospectos listos para agregar</span><button className="primary-button" disabled={!newRows.length} onClick={importNow}><CloudUpload size={15} /> Importar prospectos</button></div></section>}
-        {!rows.length && !error && <section className="panel import-guide"><div className="guide-icon"><ListChecks size={17} /></div><div><h3>Columnas requeridas</h3><p>Tu archivo debe incluir estas columnas. Reconocemos nombres equivalentes automáticamente.</p></div><div className="required-columns"><span>DNI</span><span>Nombre</span><span>WhatsApp</span></div></section>}
+    <PageHeader eyebrow="BASE DE CLIENTES" title="Importar prospectos" subtitle="Sube un Excel o CSV con DNI, Nombre y WhatsApp. Monto y Tasa son opcionales: puedes completarlos después." />
+    {!rows.length && !result && <section className="card">
+      <div className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>
+        <span className="dz-icon"><CloudUpload size={26} /></span>
+        <strong>Arrastra tu archivo aquí</strong>
+        <p className="muted-text">.xlsx, .xls o .csv · hasta 10 MB</p>
+        <Button variant="primary" icon={<FileSpreadsheet size={16} />} onClick={() => input.current?.click()} busy={loading}>Elegir archivo</Button>
+        <input ref={input} type="file" accept=".xlsx,.xls,.csv" hidden onChange={onFile} />
       </div>
-      <aside className="import-aside"><section className="panel import-help"><div className="help-illustration"><FileSpreadsheet size={23} /></div><div className="eyebrow">IMPORTACIÓN RÁPIDA</div><h3>Tu cartera, lista en segundos</h3><p>Sube el archivo de tus clientes y BuyBot se encargará de organizarlos para iniciar el proceso.</p><div className="help-step"><span>1</span><div><strong>Selecciona tu archivo</strong><small>Excel o CSV desde tu equipo</small></div></div><div className="help-step"><span>2</span><div><strong>Revisa los registros</strong><small>Validamos y detectamos duplicados</small></div></div><div className="help-step"><span>3</span><div><strong>Inicia la gestión</strong><small>Comienza la automatización</small></div></div></section><div className="import-secure-note"><LockKeyhole size={15} /><span>La información se procesa de forma local en este navegador y no se envía a ningún servidor.</span></div></aside>
-    </div>
+      {loading && <Spinner label="Leyendo archivo…" />}
+      {error && <div className="alert alert-error" role="alert"><TriangleAlert size={18} /><div><strong>No se pudo importar</strong><p>{error}</p></div></div>}
+      <div className="note">Columnas reconocidas: <b>DNI</b>, <b>Nombre</b>, <b>WhatsApp</b> (o Celular/Teléfono), y opcionales <b>Monto</b> y <b>Tasa</b>. Los duplicados por DNI o WhatsApp se omiten sin tocar lo que ya tienes.</div>
+    </section>}
+
+    {rows.length > 0 && <section className="card">
+      <div className="import-summary">
+        <div><strong>{file}</strong><span className="muted-text">{rows.length} filas leídas</span></div>
+        <div className="stat-pills"><span className="pill green">{valid.length} listas</span>{invalid.length > 0 && <span className="pill red">{invalid.length} con problemas</span>}{missingData > 0 && <span className="pill amber">{missingData} sin monto o tasa</span>}</div>
+      </div>
+      {missingData > 0 && <div className="alert alert-info">{missingData} cliente(s) no tienen monto o tasa. Se importarán igual, pero no se enviarán hasta que los completes (si tu plantilla usa [monto] o [tasa]).</div>}
+      <div className="table-wrap"><table className="data responsive"><thead><tr><th>Fila</th><th>DNI</th><th>Nombre</th><th>WhatsApp</th><th className="num">Monto</th><th className="num">Tasa</th><th>Estado</th></tr></thead>
+        <tbody>{rows.slice(0, 100).map((r) => <tr key={r.line} className={r.problem ? 'row-bad' : ''}><td data-label="Fila">{r.line}</td><td data-label="DNI" className="mono">{r.dni}</td><td data-label="Nombre" className="cell-main">{r.name || '—'}</td><td data-label="WhatsApp">{r.phone || '—'}</td><td data-label="Monto" className="num">{r.offerAmount || '—'}</td><td data-label="Tasa" className="num">{r.rate || '—'}</td><td data-label="Estado">{r.problem ? <span className="badge badge-red"><i />{r.problem}</span> : <span className="badge badge-green"><i />Lista</span>}</td></tr>)}</tbody></table></div>
+      {rows.length > 100 && <p className="muted-text small pad">Mostrando las primeras 100 filas de {rows.length}.</p>}
+      <div className="form-actions"><Button onClick={() => { setRows([]); setFile('') }}>Cancelar</Button><Button variant="primary" busy={sending} disabled={!valid.length} onClick={() => void send()}>Importar {valid.length} prospecto(s)</Button></div>
+    </section>}
+
+    {result && <section className="card result-card">
+      <span className="wa-icon tone-green"><CheckCircle2 size={28} /></span>
+      <h2>Importación terminada</h2>
+      <div className="stat-pills center"><span className="pill green">{result.created} nuevos</span><span className="pill amber">{result.duplicates} duplicados omitidos</span><span className="pill red">{result.invalid} inválidos</span></div>
+      {[...result.duplicateRows, ...result.invalidRows].length > 0 && <details className="details"><summary>Ver detalle</summary><ul>{[...result.duplicateRows, ...result.invalidRows].map((r, i) => <li key={i}>Fila {r.row}: {r.reason}</li>)}</ul></details>}
+      <div className="btn-row"><Button onClick={() => setResult(null)}>Importar otro archivo</Button><Button variant="primary" onClick={onDone}>Ver prospectos</Button></div>
+    </section>}
   </>
 }
-
-function normalizeHeader(value: string): string { return value.toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '') }
-function firstValue(record: Record<string, string>, keys: string[]): string { return keys.map((key) => record[key]).find(Boolean) ?? '' }
-function normalizePhone(value: string): string { return value.replace(/\D/g, '').replace(/^51(?=9\d{8}$)/, '') }
