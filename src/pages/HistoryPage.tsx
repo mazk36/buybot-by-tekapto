@@ -1,27 +1,63 @@
-import { useState } from 'react'
-import { Activity, ArrowDownToLine, Filter, History, Search } from 'lucide-react'
-import type { HistoryEvent } from '../types'
-import { EmptyInline, PageTitle, getInitials } from '../components/shared'
-import { formatDate, formatTime } from '../utils/format'
-export function HistoryPage({ events }: { events: HistoryEvent[] }) {
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('Todos los eventos')
-  const filtered = events.filter((event) => `${event.name} ${event.action} ${event.result}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'Todos los eventos' || event.action.toLowerCase().includes(filter.toLowerCase())))
-  return <>
-    <PageTitle eyebrow="REGISTRO DE ACTIVIDAD" title="Historial" subtitle="Consulta los movimientos de tu gestión en orden cronológico." action={<button className="outline-button" onClick={() => exportHistory(events)} disabled={!events.length}><ArrowDownToLine size={15} /> Exportar historial</button>} />
-    <section className="panel table-panel history-panel"><div className="table-topline history-toolbar"><div className="history-filters"><span className="history-filter-label"><Filter size={14} /> Tipo de actividad</span><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>Todos los eventos</option><option>Mensaje enviado</option><option>Cliente apto</option><option>segunda revisión</option><option>Automatización</option><option>Base importada</option></select></div><label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en el historial..." /></label></div><div className="table-caption"><span><strong>{filtered.length}</strong> eventos registrados</span><span className="table-caption-right">Más recientes primero</span></div><div className="table-scroll"><table className="data-table history-table"><thead><tr><th>Hora</th><th>Cliente</th><th>Acción</th><th>Resultado</th></tr></thead><tbody>{filtered.map((event) => <tr key={event.id}><td className="history-time">{formatDate(event.timestamp, { day: '2-digit', month: 'short' })}<span>{formatTime(event.timestamp)}</span></td><td><div className="table-person"><div className="avatar avatar-soft small-avatar">{event.prospectId ? getInitials(event.name) : <Activity size={14} />}</div><strong>{event.name}</strong></div></td><td><span className="event-action"><span className={event.action.includes('enviado') ? 'event-dot green' : event.action.includes('apto') ? 'event-dot blue' : 'event-dot neutral'} />{event.action}</span></td><td className="result-cell">{event.result || '—'}</td></tr>)}{!filtered.length && <tr><td colSpan={4}><EmptyInline icon={History} title="Sin resultados" text="Prueba con otro filtro o busca un cliente diferente." /></td></tr>}</tbody></table></div><div className="table-footer"><span>Se conservan los últimos 500 movimientos.</span><span className="table-caption-right"><span className="online-dot" /> Registro actualizado en tiempo real</span></div></section>
-  </>
+import { useCallback, useEffect, useState } from 'react'
+import { ArrowDownToLine, ChevronLeft, ChevronRight, History as HistoryIcon, Search } from 'lucide-react'
+import { api, qs } from '../api'
+import type { AuditEvent, Paged } from '../api'
+import { Button, Empty, ErrorBox, PageHeader, Spinner, useDebounced } from '../ui'
+import { downloadUrl, formatDateTime } from '../format'
+
+type Tone = 'green' | 'red' | 'amber' | 'blue' | 'neutral'
+const MAP: Record<string, [string, Tone]> = {
+  'message.sent': ['Mensaje enviado', 'green'], 'message.failed': ['Envío fallido', 'red'], 'message.retry': ['Reintento de envío', 'amber'],
+  'message.no_whatsapp': ['Número sin WhatsApp', 'amber'], 'message.unknown': ['Envío sin confirmar', 'red'], 'message.interrupted': ['Envío interrumpido', 'red'],
+  'prospect.create': ['Prospecto agregado', 'blue'], 'prospect.update': ['Prospecto editado', 'neutral'], 'prospect.delete': ['Prospecto eliminado', 'red'],
+  'prospect.requeue': ['Vuelto a la cola', 'amber'], 'prospect.reply': ['El cliente respondió', 'green'], 'prospect.opt_out': ['El cliente pidió BAJA', 'red'],
+  'prospects.import': ['Base importada', 'blue'], 'prospects.export': ['Base exportada', 'neutral'],
+  'campaign.start': ['Envío iniciado', 'green'], 'campaign.resume': ['Envío reanudado', 'green'], 'campaign.pause': ['Envío pausado', 'amber'], 'campaign.stop': ['Envío detenido', 'red'], 'campaign.finish': ['Envío terminado', 'blue'],
+  'whatsapp.connect': ['Conexión de WhatsApp solicitada', 'blue'], 'whatsapp.disconnect': ['WhatsApp desconectado', 'red'], 'whatsapp.reset': ['Conexión reiniciada', 'amber'], 'whatsapp.test': ['Mensaje de prueba', 'neutral'],
+  'settings.update': ['Configuración cambiada', 'neutral'], 'auth.login': ['Inicio de sesión', 'neutral'], 'user.password': ['Contraseña cambiada', 'neutral'], 'backup.download': ['Respaldo descargado', 'neutral'],
+}
+const WA_STATE: Record<string, string> = { connected: 'WhatsApp conectado', connecting: 'Esperando QR', disconnected: 'WhatsApp desconectado', no_instance: 'Sin instancia', evolution_unreachable: 'Evolution sin respuesta', evolution_not_configured: 'Evolution sin configurar' }
+
+export function eventText(e: AuditEvent): { title: string; tone: Tone } {
+  if (e.action === 'whatsapp.state') return { title: WA_STATE[e.label] ?? 'Estado de WhatsApp', tone: e.label === 'connected' ? 'green' : e.label === 'connecting' ? 'amber' : 'red' }
+  const m = MAP[e.action]
+  return { title: m?.[0] ?? e.action, tone: m?.[1] ?? 'neutral' }
 }
 
+export function HistoryPage() {
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search)
+  const [entity, setEntity] = useState('all')
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState<Paged<AuditEvent> | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    try { setData(await api<Paged<AuditEvent>>('GET', `/events${qs({ q, entity, page, pageSize: 30 })}`)); setError(null) } catch (e) { setError(e instanceof Error ? e.message : 'Error') }
+  }, [q, entity, page])
+  useEffect(() => { void load() }, [load])
+  useEffect(() => setPage(1), [q, entity])
+  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
 
-function exportHistory(events: HistoryEvent[]) {
-  const escapeCell = (value: string) => `"${value.replaceAll('"', '""')}"`
-  const rows = [['Fecha y hora', 'Cliente', 'Acción', 'Resultado'], ...events.map((event) => [event.timestamp, event.name, event.action, event.result])]
-  const csv = `\uFEFF${rows.map((row) => row.map(escapeCell).join(',')).join('\r\n')}`
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'buybot-historial.csv'
-  link.click()
-  URL.revokeObjectURL(url)
+  return <>
+    <PageHeader eyebrow="REGISTRO" title="Historial" subtitle="Todo lo que pasó en el sistema, en orden. Nada se borra."
+      actions={<Button icon={<ArrowDownToLine size={16} />} onClick={() => downloadUrl('/api/events/export.csv')}>Exportar</Button>} />
+    <section className="card table-card">
+      <div className="toolbar">
+        <label className="search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar en el historial" aria-label="Buscar en el historial" /></label>
+        <select className="select" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Tipo de evento">
+          <option value="all">Todos los eventos</option><option value="prospect">Prospectos y mensajes</option><option value="campaign">Envío automático</option><option value="whatsapp">WhatsApp</option><option value="settings">Configuración</option><option value="user">Cuenta</option>
+        </select>
+      </div>
+      {error ? <ErrorBox message={error} onRetry={() => void load()} /> : !data ? <Spinner /> : !data.items.length ? <Empty icon={<HistoryIcon size={22} />} title="Sin resultados" text="Aún no hay movimientos o no coinciden con tu búsqueda." /> : <>
+        <div className="table-wrap"><table className="data responsive"><thead><tr><th>Fecha</th><th>Evento</th><th>Detalle</th><th>Quién</th></tr></thead>
+          <tbody>{data.items.map((e) => { const t = eventText(e); return <tr key={e.id}>
+            <td data-label="Fecha" className="nowrap">{formatDateTime(e.ts)}</td>
+            <td data-label="Evento" className="cell-main"><span className={`badge badge-${t.tone}`}><i />{t.title}</span></td>
+            <td data-label="Detalle">{e.label}{e.detail && e.action !== 'settings.update' && !e.detail.startsWith('{') && <small className="sub">{e.detail}</small>}</td>
+            <td data-label="Quién" className="muted-text">{e.actor}</td></tr> })}</tbody></table></div>
+        <div className="pager"><span>{data.total} evento(s) · página {page} de {pages}</span>
+          <div className="btn-row"><Button disabled={page <= 1} icon={<ChevronLeft size={16} />} onClick={() => setPage(page - 1)}>Anterior</Button><Button disabled={page >= pages} onClick={() => setPage(page + 1)}>Siguiente <ChevronRight size={16} /></Button></div></div>
+      </>}
+    </section>
+  </>
 }
