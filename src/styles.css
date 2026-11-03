@@ -43,7 +43,7 @@ code { padding: 1px 6px; border-radius: 6px; background: var(--surface-2); borde
 .shell { min-height: 100vh; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 40; width: var(--sidebar); display: flex; flex-direction: column; gap: 8px; padding: 22px 14px 16px; background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 22px; }
-.brand img { width: 42px; height: 42px; border-radius: 7px; border: 1px solid var(--line); object-fit: cover; background: #fff; }
+.brand img { width: 42px; height: 42px; flex: none; padding: 2px; border-radius: 7px; border: 1px solid var(--line); object-fit: contain; object-position: center; background: #fff; }
 .brand strong { display: block; font-size: 20px; letter-spacing: -.05em; line-height: 1.1; } .brand strong span { color: var(--signal); } .brand small { color: var(--muted); font-size: 11px; }
 .brand .icon-btn { margin-left: auto; }
 .sidebar-label { padding: 4px 12px 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .13em; }
@@ -226,7 +226,9 @@ table.responsive tbody tr:hover { background: var(--surface-2); } .data tbody tr
 .auth-intro p { margin-top: 21px; max-width: 38ch; color: var(--ink-2); font-size: 16px; line-height: 1.6; }
 .auth-meta { display: flex; justify-content: space-between; gap: 20px; width: 100%; padding-top: 16px; border-top: 1px solid var(--line-strong); color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
 .auth-card { width: 100%; align-self: center; display: grid; gap: 4px; padding: 34px 30px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 45px rgba(18, 20, 23, .05); } .auth-card h1 { font-size: 25px; letter-spacing: -.045em; margin-top: 20px; } .auth-card > p { margin-bottom: 18px; } .auth-card .btn { margin-top: 8px; min-height: 46px; }
-.auth-brand { display: flex; align-items: center; gap: 11px; } .auth-brand img { width: 48px; height: 48px; object-fit: cover; background: #fff; border-radius: 8px; border: 1px solid var(--line); } .auth-brand strong { display: block; font-size: 22px; letter-spacing: -.05em; line-height: 1.05; } .auth-brand strong span { color: var(--signal); } .auth-brand small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.auth-brand { display: flex; align-items: center; gap: 11px; } .auth-brand img { width: 56px; height: 56px; flex: none; padding: 2px; object-fit: contain; object-position: center; background: #fff; border-radius: 10px; border: 1px solid var(--line); } .auth-brand strong { display: block; font-size: 22px; letter-spacing: -.05em; line-height: 1.05; } .auth-brand strong span { color: var(--signal); } .auth-brand small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.auth-switch { justify-self: center; margin-top: 10px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 14px; }
+.auth-switch:hover { color: var(--ink); }
 .toasts { position: fixed; z-index: 100; right: 20px; bottom: 20px; display: grid; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--ink); color: var(--bg); font-size: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); animation: fade .2s; } .toast svg { flex: none; margin-top: 1px; } .toast-ok svg { color: #4cc79b; } .toast-error { background: #7d1022; color: #fff; }
 

@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { BookOpen, LockKeyhole } from 'lucide-react'
+import { BookOpen, LockKeyhole, UserPlus } from 'lucide-react'
 import { api } from '../api'
 import type { User } from '../api'
 import { Button, Field, Modal } from '../ui'
 import { TutorialSteps } from './TutorialPage'
 import { TekaptoSignature } from '../Brand'
 
-export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser: (u: User) => void }) {
+export function LoginPage({ needsSetup, canClaimAccount, onUser }: { needsSetup: boolean; canClaimAccount: boolean; onUser: (u: User, claimed?: boolean) => void }) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [creatingAccount, setCreatingAccount] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
@@ -19,8 +22,10 @@ export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser:
     e.preventDefault()
     setBusy(true); setError('')
     try {
-      const res = await api<{ user: User }>('POST', needsSetup ? '/auth/setup' : '/auth/login', { email, password, name })
-      onUser(res.user)
+      const path = needsSetup ? '/auth/setup' : creatingAccount ? '/auth/claim' : '/auth/login'
+      const body = creatingAccount ? { email, password, confirmPassword, name, code } : { email, password, name }
+      const res = await api<{ user: User }>('POST', path, body)
+      onUser(res.user, creatingAccount)
     } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión') } finally { setBusy(false) }
   }
 
@@ -38,15 +43,27 @@ export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser:
     </section>
     <form className="auth-card" onSubmit={submit} noValidate>
       <div className="auth-brand"><img src="/buybot-robot.png" alt="" /><div><strong>BuyBot<span>.</span></strong><small>BY TEKAPTO</small></div></div>
-      <h1>{needsSetup ? 'Crea tu cuenta' : 'Inicia sesión'}</h1>
-      <p className="muted-text">{needsSetup ? 'Es la primera vez que abres BuyBot. Crea la cuenta con la que vas a administrar tus envíos.' : 'Ingresa para administrar tus prospectos y envíos.'}</p>
-      {needsSetup && <Field label="Tu nombre"><input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Cristina" /></Field>}
+      <h1>{needsSetup || creatingAccount ? 'Crea tu cuenta' : 'Inicia sesión'}</h1>
+      <p className="muted-text">{needsSetup
+        ? 'Es la primera vez que abres BuyBot. Crea la cuenta con la que vas a administrar tus envíos.'
+        : creatingAccount
+          ? 'Reemplaza la cuenta de prueba con tu correo y contraseña. El código de alta se usa una sola vez.'
+          : 'Ingresa para administrar tus prospectos y envíos.'}</p>
+      {(needsSetup || creatingAccount) && <Field label="Tu nombre"><input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Cristina" required /></Field>}
       <Field label="Correo electrónico"><input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" placeholder="tu@correo.com" required /></Field>
-      <Field label="Contraseña" hint={needsSetup ? 'Mínimo 8 caracteres.' : undefined}>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={needsSetup ? 'new-password' : 'current-password'} required />
+      {creatingAccount && <Field label="Código de alta" hint="Solicita el código al administrador de BuyBot.">
+        <input type="password" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" required />
+      </Field>}
+      <Field label="Contraseña" hint={needsSetup || creatingAccount ? 'Mínimo 8 caracteres.' : undefined}>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={needsSetup || creatingAccount ? 'new-password' : 'current-password'} minLength={needsSetup || creatingAccount ? 8 : undefined} required />
       </Field>
+      {creatingAccount && <Field label="Confirma la contraseña">
+        <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required />
+      </Field>}
       {error && <p className="field-error" role="alert">{error}</p>}
-      <Button type="submit" variant="primary" busy={busy} className="btn-block" icon={<LockKeyhole size={16} />}>{needsSetup ? 'Crear cuenta y entrar' : 'Entrar'}</Button>
+      <Button type="submit" variant="primary" busy={busy} className="btn-block" icon={<LockKeyhole size={16} />}>{needsSetup || creatingAccount ? 'Crear cuenta y entrar' : 'Entrar'}</Button>
+      {!needsSetup && canClaimAccount && !creatingAccount && <Button type="button" variant="outline" className="btn-block" icon={<UserPlus size={16} />} onClick={() => { setCreatingAccount(true); setPassword(''); setError('') }}>Crear cuenta</Button>}
+      {creatingAccount && <button type="button" className="auth-switch" onClick={() => { setCreatingAccount(false); setCode(''); setConfirmPassword(''); setError('') }}>Volver a iniciar sesión</button>}
       <button type="button" className="tutorial-link" onClick={() => setShowTutorial(true)}><BookOpen size={16} /> Ver tutorial paso a paso</button>
     </form>
     </div>

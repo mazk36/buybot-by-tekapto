@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { createReadStream, rmSync } from 'node:fs'
 import { COOKIE, createSession, destroyOtherSessions, destroySession, hashPassword, loginBlocked, loginFailed, loginOk, requireAuth, setSessionCookie, userCount, userFromToken, verifyPassword } from './auth.js'
-import { audit, copyForDownload, db, getSettings, nowIso, setRaw, tx, webhookSecret, DEFAULT_TEMPLATE } from './db.js'
+import { audit, copyForDownload, db, getRaw, getSettings, nowIso, setRaw, tx, webhookSecret, DEFAULT_TEMPLATE } from './db.js'
 import { config } from './config.js'
 import { queue } from './queue.js'
 import { whatsapp } from './whatsapp.js'
@@ -72,6 +73,16 @@ function sendCsv(reply: FastifyReply, filename: string, rows: unknown[][]) {
   return reply.send(`﻿${rows.map((r) => r.map(csvCell).join(',')).join('\r\n')}`)
 }
 
+function canClaimInitialAccount() {
+  return Boolean(config.accountClaimToken) && getRaw('accountClaimed') !== '1' && userCount() === 1
+}
+
+function matchesClaimToken(provided: string, expected: string) {
+  const providedHash = createHash('sha256').update(provided).digest()
+  const expectedHash = createHash('sha256').update(expected).digest()
+  return timingSafeEqual(providedHash, expectedHash)
+}
+
 function prospectFilter(query: any) {
   const where: string[] = []
   const params: (string | number)[] = []
@@ -126,7 +137,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // ---------- Auth ----------
   app.get('/api/auth/me', async (request) => {
     const user = userFromToken(request.cookies[COOKIE])
-    return { user, needsSetup: userCount() === 0 }
+    return { user, needsSetup: userCount() === 0, canClaimAccount: canClaimInitialAccount() }
   })
 
   app.post('/api/auth/setup', async (request, reply) => {
@@ -139,6 +150,43 @@ export async function registerRoutes(app: FastifyInstance) {
     audit(String(email), 'user.create', 'user', Number(res.lastInsertRowid), String(email), 'Cuenta inicial')
     setSessionCookie(reply, createSession(Number(res.lastInsertRowid)))
     return { user: { id: Number(res.lastInsertRowid), email, name: String(name ?? '').trim() } }
+  })
+
+  app.post('/api/auth/claim', async (request, reply) => {
+    if (!canClaimInitialAccount()) throw new HttpError(409, 'La creación de cuenta ya se utilizó o no está habilitada.')
+    const key = 'account-claim|' + request.ip
+    const wait = loginBlocked(key)
+    if (wait) throw new HttpError(429, 'Demasiados intentos. Espera ' + Math.ceil(wait / 60) + ' min e inténtalo de nuevo.')
+    const body = request.body as any
+    const code = String(body?.code ?? '')
+    if (!matchesClaimToken(code, config.accountClaimToken)) {
+      loginFailed(key)
+      throw new HttpError(401, 'El código de creación no es correcto.')
+    }
+    loginOk(key)
+
+    const email = String(body?.email ?? '').trim()
+    const name = String(body?.name ?? '').trim().replace(/\s+/g, ' ')
+    const password = String(body?.password ?? '')
+    const confirmPassword = String(body?.confirmPassword ?? '')
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw bad('Escribe un correo válido.')
+    if (name.length < 2 || name.length > 120) throw bad('Escribe tu nombre.')
+    if (password.length < 8 || password.length > 256) throw bad('La contraseña debe tener entre 8 y 256 caracteres.')
+    if (password !== confirmPassword) throw bad('Las contraseñas no coinciden.')
+    const passwordHash = await hashPassword(password)
+
+    const user = tx(() => {
+      if (!canClaimInitialAccount()) throw new HttpError(409, 'La creación de cuenta ya se utilizó o no está habilitada.')
+      const current = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number } | undefined
+      if (!current || userCount() !== 1) throw new HttpError(409, 'No hay una cuenta de prueba disponible para reclamar.')
+      db.prepare('UPDATE users SET email = ?, name = ?, password_hash = ? WHERE id = ?').run(email, name, passwordHash, current.id)
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id)
+      setRaw('accountClaimed', '1')
+      audit(email, 'user.claim', 'user', current.id, email, 'Cuenta de prueba reclamada')
+      return { id: current.id, email, name }
+    })
+    setSessionCookie(reply, createSession(user.id))
+    return { user }
   })
 
   app.post('/api/auth/login', async (request, reply) => {

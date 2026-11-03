@@ -37,6 +37,7 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const [user, setUser] = useState<User | null>(null)
   const [needsSetup, setNeedsSetup] = useState(false)
+  const [canClaimAccount, setCanClaimAccount] = useState(false)
   const [bootError, setBootError] = useState('')
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('buybot-theme') === 'dark' } catch { return false } })
 
@@ -44,7 +45,7 @@ export default function App() {
 
   const boot = useCallback(async () => {
     setBootError('')
-    try { const r = await api<{ user: User | null; needsSetup: boolean }>('GET', '/auth/me'); setUser(r.user); setNeedsSetup(r.needsSetup) }
+    try { const r = await api<{ user: User | null; needsSetup: boolean; canClaimAccount: boolean }>('GET', '/auth/me'); setUser(r.user); setNeedsSetup(r.needsSetup); setCanClaimAccount(r.canClaimAccount) }
     catch (e) { setBootError(e instanceof ApiError ? e.message : 'Error') } finally { setBooting(false) }
   }, [])
   useEffect(() => { void boot() }, [boot])
@@ -55,7 +56,7 @@ export default function App() {
   return <ToastProvider>
     {booting ? <div className="boot"><Spinner label="Iniciando…" /></div>
       : bootError ? <div className="boot"><div className="alert alert-error"><div><strong>No hay conexión con BuyBot</strong><p>{bootError}</p></div><button className="btn btn-outline" onClick={() => void boot()}>Reintentar</button></div></div>
-      : !user ? <LoginPage needsSetup={needsSetup} onUser={(u) => { setUser(u); setNeedsSetup(false) }} />
+      : !user ? <LoginPage needsSetup={needsSetup} canClaimAccount={canClaimAccount} onUser={(u, claimed) => { setUser(u); setNeedsSetup(false); if (claimed) setCanClaimAccount(false) }} />
       : <UserProvider value={{ user, setUser, logout }}><StatsProvider><Shell dark={dark} onToggleTheme={() => setDark(!dark)} /></StatsProvider></UserProvider>}
   </ToastProvider>
 }

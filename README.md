@@ -4,7 +4,7 @@ Automatización de primer contacto para asesoras comerciales. Cristina puede car
 
 ## Qué incluye
 - **Tutorial paso a paso** dentro de la app y guía pública en GitHub Pages para orientar a nuevos usuarios.
-- **Login** (cuenta única creada la primera vez; contraseñas con scrypt, sesión por cookie).
+- **Login** (cuenta única; el acceso inicial puede reclamarse con un código de un solo uso; contraseñas con scrypt y sesión por cookie).
 - **Prospectos**: CRUD completo, búsqueda, filtros, edición masiva, importación Excel/CSV, exportación. Los ya contactados quedan protegidos (DNI y WhatsApp bloqueados, eliminar exige confirmar).
 - **Base local SQLite** (`data/buybot.db`), historial de auditoría de todo cambio, respaldo diario automático y descarga manual.
 - **WhatsApp por QR**: estados conectado / esperando QR / desconectado / Evolution caído, QR que se renueva solo, reconexión, reinicio de instancia y mensaje de prueba.

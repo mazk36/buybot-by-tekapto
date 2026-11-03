@@ -16,6 +16,7 @@ export const config = {
   secureCookie: env.COOKIE_SECURE === 'true',
   bootstrapEmail: env.ADMIN_EMAIL ?? '',
   bootstrapPassword: env.ADMIN_PASSWORD ?? '',
+  accountClaimToken: env.ACCOUNT_CLAIM_TOKEN ?? '',
   countryCode: env.DEFAULT_COUNTRY_CODE ?? '51',
 }
 
