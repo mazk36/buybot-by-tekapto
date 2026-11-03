@@ -6,3 +6,4 @@ data
 site
 demo-prospectos.csv
 server/dev
+server/dist-server
