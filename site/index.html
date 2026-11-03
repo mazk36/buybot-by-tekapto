@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11131a">
+  <meta name="description" content="Tutorial paso a paso para empezar a usar BuyBot.">
+  <title>Tutorial de uso · BuyBot</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101218;--surface:#191c25;--surface2:#202430;--line:#303542;--ink:#f4f5f7;--muted:#a7adbb;--red:#f12645;--green:#6bd2aa;--amber:#f2bb66;--width:1100px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:92px}body{margin:0;background:radial-gradient(900px 480px at 8% -10%,#40212b 0,transparent 65%),var(--bg);color:var(--ink);font:16px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}a{color:inherit}button{font:inherit}
+    .wrap{width:min(var(--width),calc(100% - 40px));margin:auto}.top{position:sticky;z-index:5;top:0;border-bottom:1px solid #ffffff12;background:#101218eF;backdrop-filter:blur(14px)}.top-inner{height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:800;font-size:20px;letter-spacing:-.04em}.brand img{width:38px;height:38px;object-fit:contain;border-radius:11px;background:white}.brand span{color:var(--red)}.top-link{font-size:14px;color:#d4d7de;text-decoration:none}.top-link:hover{color:white}
+    .hero{padding:70px 0 44px;display:grid;grid-template-columns:1.2fr .8fr;align-items:center;gap:38px}.eyebrow{text-transform:uppercase;letter-spacing:.16em;color:#fb7185;font-size:12px;font-weight:800}.hero h1{font-size:clamp(38px,6vw,64px);line-height:1.04;letter-spacing:-.055em;margin:13px 0 16px}.hero p{max-width:660px;color:var(--muted);font-size:18px;margin:0}.hero-art{display:flex;justify-content:center}.hero-art img{width:min(290px,75%);height:auto;filter:drop-shadow(0 18px 55px #ed4a3b30)}
+    .notice{display:flex;gap:12px;align-items:flex-start;padding:15px 17px;border:1px solid #b9843648;border-radius:14px;background:#4b371b54;color:#f5d69e;margin:10px 0 34px}.notice strong{color:#ffe6bd}.notice p{margin:2px 0 0;color:#e7d3b3;font-size:14px}
+    .layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:28px;align-items:start}.toc{position:sticky;top:92px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:16px}.toc strong{display:block;margin:0 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.toc a{display:block;text-decoration:none;color:#d7dbe4;padding:7px 9px;border-radius:8px;font-size:14px}.toc a:hover{background:var(--surface2);color:white}.steps{display:grid;gap:14px}.step{scroll-margin-top:92px;position:relative;background:linear-gradient(140deg,var(--surface),#171922);border:1px solid var(--line);border-radius:18px;padding:22px 24px 20px 80px}.number{position:absolute;top:22px;left:22px;width:40px;height:40px;display:grid;place-items:center;border-radius:13px;background:#f1264520;color:#ff7184;font-weight:800;font-size:18px}.step h2{font-size:20px;letter-spacing:-.02em;margin:0}.step .summary{color:var(--muted);margin:4px 0 13px}.step ul{margin:0;padding-left:19px;color:#d6d9e0}.step li{padding:3px 0}.step strong{color:#fff}.step a{color:#ff9aaa;text-underline-offset:3px}.tag{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;background:#6bd2aa19;color:#8ce2bf;font-size:12px;font-weight:700;margin-top:12px}
+    .end{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:34px 0 70px}.end-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px}.end-card h2{margin:0 0 7px;font-size:18px}.end-card p{color:var(--muted);margin:0}.end-card a{display:inline-block;margin-top:14px;color:#ff9aaa;font-weight:700;text-decoration:none}.footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:13px}.footer .wrap{display:flex;justify-content:space-between;gap:16px}.muted{color:var(--muted)}
+    @media(max-width:760px){.hero{grid-template-columns:1fr;padding-top:48px;gap:12px}.hero-art{display:none}.layout{grid-template-columns:1fr}.toc{position:static;display:grid;grid-template-columns:1fr 1fr;gap:2px}.toc strong{grid-column:1/-1}.step{padding:18px 17px 18px 67px}.number{left:16px;top:19px;width:36px;height:36px}.step h2{font-size:18px}.end{grid-template-columns:1fr}.top-link{font-size:12px}.wrap{width:min(var(--width),calc(100% - 28px))}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="wrap top-inner">
+    <a class="brand" href="#inicio"><img src="buybot-robot.png" alt=""><strong>Buy<span>Bot</span></strong></a>
+    <a class="top-link" href="#pasos">Ir al tutorial ↓</a>
+  </div></header>
+  <main class="wrap" id="inicio">
+    <section class="hero">
+      <div><div class="eyebrow">Guía rápida para nuevos usuarios</div><h1>Tu primer recorrido por BuyBot</h1><p>Aprende cómo preparar la base, conectar el WhatsApp de Cristina y supervisar una campaña paso a paso.</p></div>
+      <div class="hero-art"><img src="buybot-robot.png" alt="Robot naranja de BuyBot"></div>
+    </section>
+    <aside class="notice"><span aria-hidden="true">ⓘ</span><div><strong>Antes de empezar</strong><p>Revisa que cada persona haya autorizado recibir mensajes por WhatsApp. Los contactos sin autorización deben quedar en espera y no enviarse.</p></div></aside>
+    <div class="layout" id="pasos">
+      <nav class="toc" aria-label="Pasos del tutorial"><strong>En esta guía</strong>
+        <a href="#cuenta">1. Crear la cuenta</a><a href="#whatsapp">2. Vincular WhatsApp</a><a href="#base">3. Importar la base</a><a href="#revision">4. Revisar prospectos</a><a href="#mensaje">5. Preparar mensaje</a><a href="#envios">6. Iniciar envíos</a><a href="#seguimiento">7. Dar seguimiento</a>
+      </nav>
+      <div class="steps">
+        <section class="step" id="cuenta"><span class="number">1</span><h2>Crea tu cuenta e inicia sesión</h2><p class="summary">La primera persona que abre la app crea la cuenta administradora.</p><ul><li>Usa un correo al que tengas acceso y una contraseña segura.</li><li>La cuenta administra la base, la conexión de WhatsApp y la cola de envíos.</li></ul></section>
+        <section class="step" id="whatsapp"><span class="number">2</span><h2>Vincula el WhatsApp de Cristina</h2><p class="summary">BuyBot muestra un QR para enlazar el número desde el que saldrán los mensajes.</p><ul><li>En el teléfono, abre WhatsApp y entra a <strong>Dispositivos vinculados → Vincular dispositivo</strong>.</li><li>Escanea el QR de la sección WhatsApp y espera hasta ver el estado <strong>Conectado</strong>.</li><li>El servidor de BuyBot y Evolution deben estar encendidos para generar y mantener la conexión.</li></ul></section>
+        <section class="step" id="base"><span class="number">3</span><h2>Importa la base de prospectos</h2><p class="summary">Carga un Excel o CSV con una fila por persona.</p><ul><li>Incluye DNI de 8 dígitos, nombre y celular. Monto y tasa son opcionales.</li><li>Usa una columna de autorización de WhatsApp. Escribe “Sí” solo para quienes aceptaron recibir mensajes.</li><li>Los contactos sin autorización quedan en espera y no se agregan a la cola de envío.</li></ul><span class="tag">La importación detecta encabezados comunes en español</span></section>
+        <section class="step" id="revision"><span class="number">4</span><h2>Revisa y completa los prospectos</h2><p class="summary">Confirma los datos y el permiso antes de preparar la campaña.</p><ul><li>Busca y edita registros desde <strong>Prospectos</strong>.</li><li>Corrige filas inválidas o duplicadas que se informan al importar.</li><li>Verifica que la autorización esté registrada para cada persona que se contactará.</li></ul></section>
+        <section class="step" id="mensaje"><span class="number">5</span><h2>Prepara el mensaje y el ritmo</h2><p class="summary">Todos reciben una misma estructura personalizada con sus propios datos.</p><ul><li>Edita la plantilla en <strong>Configuración</strong>. Variables disponibles: <strong>[nombre]</strong>, <strong>[monto]</strong> y <strong>[tasa]</strong>.</li><li>La pausa predeterminada es <strong>30 segundos entre mensajes</strong>. Ajusta también el límite diario y el horario.</li><li>Incluye una forma clara de pedir que no vuelvan a escribir. La respuesta “BAJA” marca el contacto para no volver a enviarlo.</li></ul></section>
+        <section class="step" id="envios"><span class="number">6</span><h2>Inicia y supervisa los envíos</h2><p class="summary">La cola procesa prospectos autorizados uno por uno.</p><ul><li>Ve a <strong>Envíos</strong> e inicia cuando WhatsApp aparezca conectado y la lista esté revisada.</li><li>Puedes pausar, reanudar o detener la cola. La app muestra el progreso y los errores.</li><li>Si se cae la conexión, revisa el estado de WhatsApp antes de reanudar.</li></ul></section>
+        <section class="step" id="seguimiento"><span class="number">7</span><h2>Da seguimiento a las respuestas</h2><p class="summary">BuyBot registra eventos y respuestas entrantes cuando el webhook está configurado.</p><ul><li>Cristina revisa y gestiona las conversaciones con los clientes.</li><li>Consulta <strong>Historial</strong> para ver actividad y <strong>Por revisar</strong> para atender fallos o números sin WhatsApp.</li><li>La automatización no evalúa créditos ni decide si una persona califica.</li></ul></section>
+      </div>
+    </div>
+    <section class="end">
+      <div class="end-card"><h2>Para operar la app</h2><p>Esta página pública es el tutorial. El panel, la base de datos, el inicio de sesión y la conexión de WhatsApp requieren el servidor BuyBot en ejecución.</p><a href="http://localhost:5173/">Abrir el panel local ↗</a></div>
+      <div class="end-card"><h2>Cuida la conexión</h2><p>Evolution enlaza una sesión no oficial de WhatsApp Web. Para una operación estable, revisa las condiciones de Meta y considera la plataforma oficial WhatsApp Business.</p><a href="#inicio">Volver al inicio ↑</a></div>
+    </section>
+  </main>
+  <footer class="footer"><div class="wrap"><span>BuyBot · Tutorial de uso</span><span>Automatización comercial para Cristina</span></div></footer>
+</body>
+</html>

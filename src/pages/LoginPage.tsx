@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { LockKeyhole } from 'lucide-react'
+import { BookOpen, LockKeyhole } from 'lucide-react'
 import { api } from '../api'
 import type { User } from '../api'
-import { Button, Field } from '../ui'
+import { Button, Field, Modal } from '../ui'
+import { TutorialSteps } from './TutorialPage'
 
 export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser: (u: User) => void }) {
   const [email, setEmail] = useState('')
@@ -11,6 +12,7 @@ export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser:
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -21,7 +23,8 @@ export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser:
     } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión') } finally { setBusy(false) }
   }
 
-  return <main className="auth-page">
+  return <>
+  <main className="auth-page">
     <form className="auth-card" onSubmit={submit} noValidate>
       <div className="auth-brand"><img src="/buybot-robot.png" alt="" /><strong>Buy<span>Bot</span></strong></div>
       <h1>{needsSetup ? 'Crea tu cuenta' : 'Inicia sesión'}</h1>
@@ -33,6 +36,11 @@ export function LoginPage({ needsSetup, onUser }: { needsSetup: boolean; onUser:
       </Field>
       {error && <p className="field-error" role="alert">{error}</p>}
       <Button type="submit" variant="primary" busy={busy} className="btn-block" icon={<LockKeyhole size={16} />}>{needsSetup ? 'Crear cuenta y entrar' : 'Entrar'}</Button>
+      <button type="button" className="tutorial-link" onClick={() => setShowTutorial(true)}><BookOpen size={16} /> Ver tutorial paso a paso</button>
     </form>
   </main>
+  {showTutorial && <Modal title="Cómo funciona BuyBot" onClose={() => setShowTutorial(false)} wide>
+    <TutorialSteps compact />
+  </Modal>}
+  </>
 }

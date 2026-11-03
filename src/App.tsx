@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, History, LayoutDashboard, Menu, MessageCircle, Moon, RotateCcw, Settings, Sun, Upload, Users, X } from 'lucide-react'
+import { Activity, BookOpen, History, LayoutDashboard, Menu, MessageCircle, Moon, RotateCcw, Settings, Sun, Upload, Users, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, setUnauthorizedHandler } from './api'
 import type { Status, User } from './api'
@@ -14,8 +14,9 @@ import { WhatsAppPage, waLabel } from './pages/WhatsAppPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TutorialPage } from './pages/TutorialPage'
 
-export type Page = 'dashboard' | 'prospects' | 'import' | 'send' | 'whatsapp' | 'review' | 'history' | 'settings'
+export type Page = 'dashboard' | 'prospects' | 'import' | 'send' | 'whatsapp' | 'review' | 'history' | 'settings' | 'tutorial'
 const PAGES: Page[] = ['dashboard', 'prospects', 'import', 'send', 'whatsapp', 'review', 'history', 'settings']
 const NAV: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
@@ -25,8 +26,9 @@ const NAV: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { id: 'review', label: 'Por revisar', icon: RotateCcw },
   { id: 'history', label: 'Historial', icon: History },
+  { id: 'tutorial', label: 'Tutorial', icon: BookOpen },
 ]
-const TITLES: Record<Page, string> = { dashboard: 'Inicio', prospects: 'Prospectos', import: 'Importar', send: 'Envíos', whatsapp: 'WhatsApp', review: 'Por revisar', history: 'Historial', settings: 'Configuración' }
+const TITLES: Record<Page, string> = { dashboard: 'Inicio', prospects: 'Prospectos', import: 'Importar', send: 'Envíos', whatsapp: 'WhatsApp', review: 'Por revisar', history: 'Historial', settings: 'Configuración', tutorial: 'Tutorial' }
 
 const readHash = (): Page => { const h = window.location.hash.replace('#/', '') as Page; return PAGES.includes(h) ? h : 'dashboard' }
 
@@ -104,6 +106,7 @@ function Shell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => vo
         {page === 'review' && <ReviewPage openProspects={() => { setFilter('failed'); goto('prospects') }} />}
         {page === 'history' && <HistoryPage />}
         {page === 'settings' && <SettingsPage dark={dark} onToggleTheme={onToggleTheme} />}
+        {page === 'tutorial' && <TutorialPage goto={goto} />}
       </main>
     </div>
   </div>

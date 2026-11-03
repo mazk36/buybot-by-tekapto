@@ -3,6 +3,7 @@
 Automatización de primer contacto para asesoras comerciales. Cristina puede cargar y organizar prospectos, escribir una plantilla común con variables y controlar una cola secuencial de envíos.
 
 ## Qué incluye
+- **Tutorial paso a paso** dentro de la app y guía pública en GitHub Pages para orientar a nuevos usuarios.
 - **Login** (cuenta única creada la primera vez; contraseñas con scrypt, sesión por cookie).
 - **Prospectos**: CRUD completo, búsqueda, filtros, edición masiva, importación Excel/CSV, exportación. Los ya contactados quedan protegidos (DNI y WhatsApp bloqueados, eliminar exige confirmar).
 - **Base local SQLite** (`data/buybot.db`), historial de auditoría de todo cambio, respaldo diario automático y descarga manual.
