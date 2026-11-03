@@ -25,8 +25,10 @@ async function call<T = any>(method: string, path: string, body?: unknown, timeo
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch { data = text }
   if (!response.ok) {
-    const detail = typeof data === 'object' && data ? (data.response?.message?.[0] ?? data.message ?? data.error) : data
-    throw new EvolutionError(`Evolution API respondió ${response.status}${detail ? `: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`, 'http', response.status)
+    const message = response.status >= 500
+      ? 'Evolution API presenta un error interno.'
+      : 'Evolution API rechazó la solicitud.'
+    throw new EvolutionError(message + ' (HTTP ' + response.status + ').', 'http', response.status)
   }
   return data as T
 }

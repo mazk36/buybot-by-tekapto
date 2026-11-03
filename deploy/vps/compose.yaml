@@ -70,7 +70,7 @@ services:
       traefik.http.middlewares.buybot-noindex.headers.customresponseheaders.X-Robots-Tag: noindex, nofollow
 
   evolution:
-    image: buybot-evolution:2.3.7-1bd8afc4
+    image: buybot-evolution:2.3.7-qrfix-20261103
     container_name: buybot-evolution
     restart: unless-stopped
     init: true

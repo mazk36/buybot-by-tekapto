@@ -1,13 +1,25 @@
 /* Run Evolution's PostgreSQL migrations without writing the DSN to container logs. */
 const { spawnSync, spawn } = require('node:child_process')
+const { cpSync, mkdirSync } = require('node:fs')
+const { join } = require('node:path')
 
 if (process.env.DATABASE_PROVIDER !== 'postgresql' || !process.env.DATABASE_CONNECTION_URI) {
   console.error('Evolution startup refused: PostgreSQL runtime configuration missing.')
   process.exit(1)
 }
 
+const runtimePrisma = '/tmp/buybot-prisma'
+try {
+  mkdirSync(runtimePrisma, { recursive: true })
+  cpSync('/evolution/prisma/postgresql-schema.prisma', join(runtimePrisma, 'postgresql-schema.prisma'))
+  cpSync('/evolution/prisma/postgresql-migrations', join(runtimePrisma, 'migrations'), { recursive: true })
+} catch {
+  console.error('Evolution startup refused: PostgreSQL migration files could not be prepared.')
+  process.exit(1)
+}
+
 const migration = spawnSync('/evolution/node_modules/.bin/prisma', [
-  'migrate', 'deploy', '--schema', '/evolution/prisma/postgresql-schema.prisma',
+  'migrate', 'deploy', '--schema', join(runtimePrisma, 'postgresql-schema.prisma'),
 ], {
   cwd: '/evolution',
   env: process.env,
