@@ -1,0 +1,10 @@
+FROM evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339
+
+USER root
+COPY --chown=0:0 deploy/vps/evolution-start.cjs /names-runtime/start.cjs
+RUN mkdir -p /evolution/instances \
+    && chown 1000:1000 /evolution/instances \
+    && chmod 0444 /names-runtime/start.cjs
+
+USER 1000:1000
+ENTRYPOINT ["node", "/names-runtime/start.cjs"]

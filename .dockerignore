@@ -3,3 +3,6 @@ dist
 data
 .env
 .git
+site
+demo-prospectos.csv
+server/dev

@@ -26,12 +26,14 @@ pnpm test:smoke       # pruebas de punta a punta (con la API y el mock corriendo
 ```
 Control del simulador: `POST :8080/__mock/scan` (simula escanear el QR), `/__mock/drop` (cae la sesión), `/__mock/fail?mode=http|hang`.
 
-## Producción (Docker)
-```bash
-cp .env.example .env   # reemplaza EVOLUTION_API_KEY y POSTGRES_PASSWORD por claves seguras
-docker compose up -d --build
-```
-Abre `http://servidor:8787`, crea la cuenta y conecta WhatsApp. Publícalo detrás de HTTPS (y `COOKIE_SECURE=true`).
+## Producción
+
+El tutorial público de GitHub Pages enlaza a la aplicación alojada detrás de HTTPS en Contabo:
+
+- Tutorial: <https://marcelojauregui.me/buybot-by-tekapto/>
+- Aplicación: <https://buybot.217.76.49.199.sslip.io/>
+
+Para producción se usa `deploy/vps/compose.yaml` y su guía operativa, no el `docker-compose.yml` de desarrollo. Producción requiere secretos runtime fuera de Git, cookies seguras, Traefik, redes propias y respaldo verificado. No publicar puertos de aplicación, Evolution, PostgreSQL o Redis en el host.
 
 Para probar Evolution real desde el modo de desarrollo, configura `EVOLUTION_API_URL=http://localhost:8080` y `PUBLIC_WEBHOOK_URL=http://host.docker.internal:8787` en `.env`. Luego ejecuta `docker compose up -d evolution postgres redis` y `pnpm dev`; abre `http://localhost:5173`. El simulador ya no debe ocupar el puerto `:8080`.
 

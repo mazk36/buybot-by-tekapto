@@ -1,0 +1,197 @@
+name: buybot-prod
+
+services:
+  web:
+    image: buybot-web:${BUYBOT_IMAGE_TAG:?Set BUYBOT_IMAGE_TAG in secrets/database.env}
+    container_name: buybot-web
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    env_file:
+      - ../../secrets/app.env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8787"
+      DATA_DIR: /data
+      WEB_DIR: /app/dist
+      TZ: America/Lima
+      COOKIE_SECURE: "true"
+      EVOLUTION_API_URL: http://buybot-evolution:8080
+      PUBLIC_WEBHOOK_URL: http://buybot-web:8787
+      EVOLUTION_INSTANCE: buybot
+      DEFAULT_COUNTRY_CODE: "51"
+    volumes:
+      - app-data:/data
+    expose:
+      - "8787"
+    networks:
+      - buybot-prod
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 384m
+    mem_reservation: 128m
+    cpus: 0.75
+    pids_limit: 128
+    stop_grace_period: 20s
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: buybot-prod
+      traefik.http.routers.buybot-http.entrypoints: http
+      traefik.http.routers.buybot-http.rule: Host(`buybot.217.76.49.199.sslip.io`) && PathPrefix(`/`)
+      traefik.http.routers.buybot-http.middlewares: buybot-redirect
+      traefik.http.routers.buybot-http.service: buybot-web
+      traefik.http.routers.buybot-https.entrypoints: https
+      traefik.http.routers.buybot-https.rule: Host(`buybot.217.76.49.199.sslip.io`) && PathPrefix(`/`)
+      traefik.http.routers.buybot-https.middlewares: buybot-gzip,buybot-noindex
+      traefik.http.routers.buybot-https.service: buybot-web
+      traefik.http.routers.buybot-https.tls: "true"
+      traefik.http.routers.buybot-https.tls.certresolver: letsencrypt
+      traefik.http.services.buybot-web.loadbalancer.server.port: "8787"
+      traefik.http.middlewares.buybot-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.buybot-redirect.redirectscheme.permanent: "true"
+      traefik.http.middlewares.buybot-gzip.compress: "true"
+      traefik.http.middlewares.buybot-noindex.headers.customresponseheaders.X-Robots-Tag: noindex, nofollow
+
+  evolution:
+    image: buybot-evolution:2.3.7-1bd8afc4
+    container_name: buybot-evolution
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    env_file:
+      - ../../secrets/evolution.env
+    environment:
+      DOCKER_ENV: "true"
+      SERVER_URL: http://buybot-evolution:8080
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: "postgresql://buybot:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@buybot-postgres:5432/buybot"
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://buybot-redis:6379/6
+      CACHE_LOCAL_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      TZ: America/Lima
+    volumes:
+      - evolution-instances:/evolution/instances
+    expose:
+      - "8080"
+    networks:
+      - buybot-prod
+      - buybot-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://127.0.0.1:8080/\",r=>process.exit(r.statusCode===200?0:1)).on(\"error\",()=>process.exit(1))'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: 1.0
+    pids_limit: 256
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+    container_name: buybot-postgres
+    restart: unless-stopped
+    init: true
+    user: "70:70"
+    env_file:
+      - ../../secrets/database.env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: America/Lima
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - buybot-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buybot -d buybot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    mem_reservation: 96m
+    cpus: 0.5
+    pids_limit: 128
+    shm_size: 64m
+    stop_grace_period: 60s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    container_name: buybot-redis
+    restart: unless-stopped
+    init: true
+    user: "999:1000"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
+    networks:
+      - buybot-data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: 0.25
+    pids_limit: 64
+    stop_grace_period: 10s
+    logging: *default-logging
+
+volumes:
+  app-data:
+  evolution-instances:
+  postgres-data:
+
+networks:
+  buybot-prod:
+    name: buybot-prod
+    external: true
+  buybot-data:
+    name: buybot-data
+    driver: bridge
+    internal: true
+    attachable: true
