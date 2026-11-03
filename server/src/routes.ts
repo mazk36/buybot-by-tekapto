@@ -74,7 +74,15 @@ function sendCsv(reply: FastifyReply, filename: string, rows: unknown[][]) {
 }
 
 function canClaimInitialAccount() {
-  return Boolean(config.accountClaimToken) && getRaw('accountClaimed') !== '1' && userCount() === 1
+  return Boolean(config.accountClaimToken) && getRaw('accountClaimed') !== '1' && userCount() >= 1
+}
+
+function canInviteOneAccount() {
+  return Boolean(config.accountInviteToken) && getRaw('accountInviteUsed') !== '1' && userCount() === 1
+}
+
+function canCreateAccount() {
+  return canClaimInitialAccount() || canInviteOneAccount()
 }
 
 function matchesClaimToken(provided: string, expected: string) {
@@ -137,7 +145,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // ---------- Auth ----------
   app.get('/api/auth/me', async (request) => {
     const user = userFromToken(request.cookies[COOKIE])
-    return { user, needsSetup: userCount() === 0, canClaimAccount: canClaimInitialAccount() }
+    return { user, needsSetup: userCount() === 0, canCreateAccount: canCreateAccount() }
   })
 
   app.post('/api/auth/setup', async (request, reply) => {
@@ -149,17 +157,19 @@ export async function registerRoutes(app: FastifyInstance) {
     const res = db.prepare('INSERT INTO users(email,name,password_hash) VALUES(?,?,?)').run(String(email).trim(), String(name ?? '').trim(), hash)
     audit(String(email), 'user.create', 'user', Number(res.lastInsertRowid), String(email), 'Cuenta inicial')
     setSessionCookie(reply, createSession(Number(res.lastInsertRowid)))
-    return { user: { id: Number(res.lastInsertRowid), email, name: String(name ?? '').trim() } }
+    return { user: { id: Number(res.lastInsertRowid), email, name: String(name ?? '').trim() }, canCreateAccount: canCreateAccount() }
   })
 
-  app.post('/api/auth/claim', async (request, reply) => {
-    if (!canClaimInitialAccount()) throw new HttpError(409, 'La creación de cuenta ya se utilizó o no está habilitada.')
-    const key = 'account-claim|' + request.ip
+  app.post('/api/auth/create-account', async (request, reply) => {
+    if (!canCreateAccount()) throw new HttpError(409, 'La creación de cuenta ya se utilizó o no está habilitada.')
+    const key = 'account-create|' + request.ip
     const wait = loginBlocked(key)
     if (wait) throw new HttpError(429, 'Demasiados intentos. Espera ' + Math.ceil(wait / 60) + ' min e inténtalo de nuevo.')
     const body = request.body as any
     const code = String(body?.code ?? '')
-    if (!matchesClaimToken(code, config.accountClaimToken)) {
+    const claimInitial = canClaimInitialAccount() && matchesClaimToken(code, config.accountClaimToken)
+    const inviteOne = canInviteOneAccount() && matchesClaimToken(code, config.accountInviteToken)
+    if (!claimInitial && !inviteOne) {
       loginFailed(key)
       throw new HttpError(401, 'El código de creación no es correcto.')
     }
@@ -176,17 +186,25 @@ export async function registerRoutes(app: FastifyInstance) {
     const passwordHash = await hashPassword(password)
 
     const user = tx(() => {
-      if (!canClaimInitialAccount()) throw new HttpError(409, 'La creación de cuenta ya se utilizó o no está habilitada.')
-      const current = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number } | undefined
-      if (!current || userCount() !== 1) throw new HttpError(409, 'No hay una cuenta de prueba disponible para reclamar.')
-      db.prepare('UPDATE users SET email = ?, name = ?, password_hash = ? WHERE id = ?').run(email, name, passwordHash, current.id)
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id)
-      setRaw('accountClaimed', '1')
-      audit(email, 'user.claim', 'user', current.id, email, 'Cuenta de prueba reclamada')
-      return { id: current.id, email, name }
+      if (claimInitial) {
+        if (!canClaimInitialAccount()) throw new HttpError(409, 'La cuenta inicial ya fue reclamada.')
+        const current = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get() as { id: number } | undefined
+        if (!current) throw new HttpError(409, 'No hay una cuenta de prueba disponible para reclamar.')
+        db.prepare('UPDATE users SET email = ?, name = ?, password_hash = ? WHERE id = ?').run(email, name, passwordHash, current.id)
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id)
+        setRaw('accountClaimed', '1')
+        audit(email, 'user.claim', 'user', current.id, email, 'Cuenta de prueba reclamada')
+        return { id: current.id, email, name }
+      }
+      if (!inviteOne || !canInviteOneAccount()) throw new HttpError(409, 'La invitación ya fue utilizada o no está disponible.')
+      const result = db.prepare('INSERT INTO users(email,name,password_hash) VALUES(?,?,?)').run(email, name, passwordHash)
+      const id = Number(result.lastInsertRowid)
+      setRaw('accountInviteUsed', '1')
+      audit(email, 'user.invite', 'user', id, email, 'Cuenta adicional creada con invitación')
+      return { id, email, name }
     })
     setSessionCookie(reply, createSession(user.id))
-    return { user }
+    return { user, canCreateAccount: canCreateAccount() }
   })
 
   app.post('/api/auth/login', async (request, reply) => {

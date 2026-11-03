@@ -37,7 +37,7 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const [user, setUser] = useState<User | null>(null)
   const [needsSetup, setNeedsSetup] = useState(false)
-  const [canClaimAccount, setCanClaimAccount] = useState(false)
+  const [canCreateAccount, setCanCreateAccount] = useState(false)
   const [bootError, setBootError] = useState('')
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('buybot-theme') === 'dark' } catch { return false } })
 
@@ -45,18 +45,18 @@ export default function App() {
 
   const boot = useCallback(async () => {
     setBootError('')
-    try { const r = await api<{ user: User | null; needsSetup: boolean; canClaimAccount: boolean }>('GET', '/auth/me'); setUser(r.user); setNeedsSetup(r.needsSetup); setCanClaimAccount(r.canClaimAccount) }
+    try { const r = await api<{ user: User | null; needsSetup: boolean; canCreateAccount: boolean }>('GET', '/auth/me'); setUser(r.user); setNeedsSetup(r.needsSetup); setCanCreateAccount(r.canCreateAccount) }
     catch (e) { setBootError(e instanceof ApiError ? e.message : 'Error') } finally { setBooting(false) }
   }, [])
   useEffect(() => { void boot() }, [boot])
   useEffect(() => { setUnauthorizedHandler(() => setUser(null)) }, [])
 
-  const logout = async () => { try { await api('POST', '/auth/logout') } finally { setUser(null); window.location.hash = '' } }
+  const logout = async () => { try { await api('POST', '/auth/logout') } finally { setUser(null); window.location.hash = ''; void boot() } }
 
   return <ToastProvider>
     {booting ? <div className="boot"><Spinner label="Iniciando…" /></div>
       : bootError ? <div className="boot"><div className="alert alert-error"><div><strong>No hay conexión con BuyBot</strong><p>{bootError}</p></div><button className="btn btn-outline" onClick={() => void boot()}>Reintentar</button></div></div>
-      : !user ? <LoginPage needsSetup={needsSetup} canClaimAccount={canClaimAccount} onUser={(u, claimed) => { setUser(u); setNeedsSetup(false); if (claimed) setCanClaimAccount(false) }} />
+      : !user ? <LoginPage needsSetup={needsSetup} canCreateAccount={canCreateAccount} onUser={(u, canCreate) => { setUser(u); setNeedsSetup(false); if (canCreate !== undefined) setCanCreateAccount(canCreate) }} />
       : <UserProvider value={{ user, setUser, logout }}><StatsProvider><Shell dark={dark} onToggleTheme={() => setDark(!dark)} /></StatsProvider></UserProvider>}
   </ToastProvider>
 }

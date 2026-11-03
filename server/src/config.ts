@@ -17,6 +17,7 @@ export const config = {
   bootstrapEmail: env.ADMIN_EMAIL ?? '',
   bootstrapPassword: env.ADMIN_PASSWORD ?? '',
   accountClaimToken: env.ACCOUNT_CLAIM_TOKEN ?? '',
+  accountInviteToken: env.ACCOUNT_INVITE_TOKEN ?? '',
   countryCode: env.DEFAULT_COUNTRY_CODE ?? '51',
 }
 

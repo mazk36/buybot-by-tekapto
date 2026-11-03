@@ -7,7 +7,7 @@ import { Button, Field, Modal } from '../ui'
 import { TutorialSteps } from './TutorialPage'
 import { TekaptoSignature } from '../Brand'
 
-export function LoginPage({ needsSetup, canClaimAccount, onUser }: { needsSetup: boolean; canClaimAccount: boolean; onUser: (u: User, claimed?: boolean) => void }) {
+export function LoginPage({ needsSetup, canCreateAccount, onUser }: { needsSetup: boolean; canCreateAccount: boolean; onUser: (u: User, canCreateAccount?: boolean) => void }) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -22,10 +22,10 @@ export function LoginPage({ needsSetup, canClaimAccount, onUser }: { needsSetup:
     e.preventDefault()
     setBusy(true); setError('')
     try {
-      const path = needsSetup ? '/auth/setup' : creatingAccount ? '/auth/claim' : '/auth/login'
+      const path = needsSetup ? '/auth/setup' : creatingAccount ? '/auth/create-account' : '/auth/login'
       const body = creatingAccount ? { email, password, confirmPassword, name, code } : { email, password, name }
-      const res = await api<{ user: User }>('POST', path, body)
-      onUser(res.user, creatingAccount)
+      const res = await api<{ user: User; canCreateAccount?: boolean }>('POST', path, body)
+      onUser(res.user, res.canCreateAccount)
     } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión') } finally { setBusy(false) }
   }
 
@@ -47,7 +47,7 @@ export function LoginPage({ needsSetup, canClaimAccount, onUser }: { needsSetup:
       <p className="muted-text">{needsSetup
         ? 'Es la primera vez que abres BuyBot. Crea la cuenta con la que vas a administrar tus envíos.'
         : creatingAccount
-          ? 'Reemplaza la cuenta de prueba con tu correo y contraseña. El código de alta se usa una sola vez.'
+          ? 'Usa el código de un solo uso que te dio el administrador para configurar tu acceso.'
           : 'Ingresa para administrar tus prospectos y envíos.'}</p>
       {(needsSetup || creatingAccount) && <Field label="Tu nombre"><input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Cristina" required /></Field>}
       <Field label="Correo electrónico"><input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" placeholder="tu@correo.com" required /></Field>
@@ -62,7 +62,7 @@ export function LoginPage({ needsSetup, canClaimAccount, onUser }: { needsSetup:
       </Field>}
       {error && <p className="field-error" role="alert">{error}</p>}
       <Button type="submit" variant="primary" busy={busy} className="btn-block" icon={<LockKeyhole size={16} />}>{needsSetup || creatingAccount ? 'Crear cuenta y entrar' : 'Entrar'}</Button>
-      {!needsSetup && canClaimAccount && !creatingAccount && <Button type="button" variant="outline" className="btn-block" icon={<UserPlus size={16} />} onClick={() => { setCreatingAccount(true); setPassword(''); setError('') }}>Crear cuenta</Button>}
+      {!needsSetup && canCreateAccount && !creatingAccount && <Button type="button" variant="outline" className="btn-block" icon={<UserPlus size={16} />} onClick={() => { setCreatingAccount(true); setPassword(''); setError('') }}>Crear cuenta</Button>}
       {creatingAccount && <button type="button" className="auth-switch" onClick={() => { setCreatingAccount(false); setCode(''); setConfirmPassword(''); setError('') }}>Volver a iniciar sesión</button>}
       <button type="button" className="tutorial-link" onClick={() => setShowTutorial(true)}><BookOpen size={16} /> Ver tutorial paso a paso</button>
     </form>
