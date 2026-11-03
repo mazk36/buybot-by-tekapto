@@ -8,7 +8,7 @@ services:
     init: true
     user: "1000:1000"
     env_file:
-      - ../../secrets/app.env
+      - ../../../secrets/app.env
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -76,7 +76,7 @@ services:
     init: true
     user: "1000:1000"
     env_file:
-      - ../../secrets/evolution.env
+      - ../../../secrets/evolution.env
     environment:
       DOCKER_ENV: "true"
       SERVER_URL: http://buybot-evolution:8080
@@ -126,7 +126,7 @@ services:
     init: true
     user: "70:70"
     env_file:
-      - ../../secrets/database.env
+      - ../../../secrets/database.env
     environment:
       PGDATA: /var/lib/postgresql/data/pgdata
       TZ: America/Lima
