@@ -26,7 +26,9 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Add BuyBot logo
-        run: cp public/buybot-robot.png site/buybot-robot.png
+        run: |
+          cp public/buybot-robot.png site/buybot-robot.png
+          cp -R public/fonts site/fonts
       - name: Upload tutorial site
         uses: actions/upload-pages-artifact@v4
         with:

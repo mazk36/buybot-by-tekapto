@@ -15,9 +15,10 @@ import { ReviewPage } from './pages/ReviewPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TutorialPage } from './pages/TutorialPage'
+import { TekaptoSignature } from './Brand'
 
 export type Page = 'dashboard' | 'prospects' | 'import' | 'send' | 'whatsapp' | 'review' | 'history' | 'settings' | 'tutorial'
-const PAGES: Page[] = ['dashboard', 'prospects', 'import', 'send', 'whatsapp', 'review', 'history', 'settings']
+const PAGES: Page[] = ['dashboard', 'prospects', 'import', 'send', 'whatsapp', 'review', 'history', 'settings', 'tutorial']
 const NAV: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
   { id: 'prospects', label: 'Prospectos', icon: Users },
@@ -70,17 +71,19 @@ function Shell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => vo
   const wa = waLabel(stats?.whatsapp.state)
   const review = stats ? stats.counts.failed + stats.counts.no_whatsapp : 0
 
-  useEffect(() => { document.title = `${TITLES[page]} · BuyBot`; if (page !== 'prospects') setFilter('all') }, [page])
+  useEffect(() => { document.title = `${TITLES[page]} · BuyBot by Tekapto`; if (page !== 'prospects') setFilter('all') }, [page])
 
   return <div className="shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`} aria-label="Navegación principal">
-      <div className="brand"><img src="/buybot-robot.png" alt="" /><div><strong>Buy<span>Bot</span></strong><small>Automatización comercial</small></div>
+      <div className="brand"><img src="/buybot-robot.png" alt="" /><div><strong>BuyBot<span className="brand-dot">.</span></strong><small>Automatización comercial</small></div>
         <button className="icon-btn only-mobile" aria-label="Cerrar menú" onClick={() => setMenu(false)}><X size={20} /></button></div>
+      <div className="sidebar-label">ESPACIO DE TRABAJO</div>
       <nav>{NAV.map(({ id, label, icon: Icon }) => <button key={id} className={`nav ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => goto(id)}>
         <Icon size={18} /><span>{label}</span>{id === 'review' && review > 0 && <em>{review}</em>}</button>)}</nav>
       <div className="sidebar-foot">
         <button className={`nav ${page === 'settings' ? 'active' : ''}`} onClick={() => goto('settings')}><Settings size={18} /><span>Configuración</span></button>
         <button className={`wa-chip tone-${wa.tone}`} onClick={() => goto('whatsapp')}><i /><span>{wa.text}</span></button>
+        <div className="sidebar-signature"><span>UN PRODUCTO DE</span><TekaptoSignature /></div>
       </div>
     </aside>
     {menu && <button className="scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
