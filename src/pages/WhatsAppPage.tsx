@@ -42,6 +42,7 @@ export function WhatsAppPage() {
 
   return <>
     <PageHeader eyebrow="CONEXIÓN" title="WhatsApp" subtitle="Vincula el número desde el que se enviarán los mensajes. El estado se actualiza solo." />
+    <div className="alert alert-warn">El QR usa Evolution API para vincular una sesión de WhatsApp Web de terceros. WhatsApp no la respalda y advierte que el uso de clientes no oficiales puede causar bloqueos. Para una operación estable, conviene migrar a la plataforma oficial de WhatsApp Business.</div>
     <div className="wa-layout">
       <section className="card wa-main" aria-live="polite">
         {!wa && <div className="wa-state"><LoaderCircle className="spin" size={28} /><h2>Verificando conexión…</h2></div>}

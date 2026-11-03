@@ -3,7 +3,7 @@ services:
   buybot:
     build: .
     restart: unless-stopped
-    ports: ["8787:8787"]
+    ports: ["${BUYBOT_PORT:-8787}:8787"]
     environment:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
@@ -14,8 +14,10 @@ services:
     depends_on: [evolution]
 
   evolution:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.7
     restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       SERVER_URL: http://evolution:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}

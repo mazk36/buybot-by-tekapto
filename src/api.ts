@@ -3,6 +3,7 @@ export type WaState = 'evolution_not_configured' | 'evolution_unreachable' | 'no
 
 export interface Prospect {
   id: number; dni: string; name: string; phone: string; offerAmount: number | null; rate: number | null; notes: string
+  whatsappOptIn: boolean
   status: Status; attempts: number; lastError: string | null; sentAt: string | null; repliedAt: string | null; replyText: string | null
   createdAt: string; updatedAt: string
 }

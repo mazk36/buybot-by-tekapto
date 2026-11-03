@@ -5,23 +5,40 @@ import { api } from '../api'
 import { Button, PageHeader, Spinner, useToast } from '../ui'
 import { useStats } from '../store'
 
-interface Row { dni: string; name: string; phone: string; offerAmount: string; rate: string; line: number; problem?: string }
-interface Result { created: number; duplicates: number; invalid: number; duplicateRows: { row: number; reason: string }[]; invalidRows: { row: number; reason: string }[] }
+interface Row { dni: string; name: string; phone: string; offerAmount: string; rate: string; whatsappOptIn: boolean; line: number; problem?: string }
+interface Result { created: number; onHold: number; duplicates: number; invalid: number; duplicateRows: { row: number; reason: string }[]; invalidRows: { row: number; reason: string }[] }
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
 const ALIASES = {
-  dni: ['dni', 'documento', 'numerodocumento', 'nrodocumento', 'numerodedocumento'],
-  name: ['nombre', 'nombres', 'cliente', 'nombrecompleto', 'name'],
-  phone: ['whatsapp', 'telefono', 'celular', 'phone', 'numerodetelefono', 'movil'],
+  dni: ['dni', 'dninuevo', 'documento', 'numerodocumento', 'nrodocumento', 'numerodedocumento'],
+  name: ['nombrecompleto', 'nombrescliente', 'nombrecliente', 'cliente', 'nombres', 'nombre', 'name'],
+  surname: ['apellidos', 'apellidospaterno', 'apellidomaternocliente', 'apellidopaternocliente', 'apellido'],
+  phone: ['whatsapp', 'numerowhatsapp', 'cel', 'celular', 'telefmovil', 'telefono', 'phone', 'numerodetelefono', 'movil'],
   offerAmount: ['monto', 'montooferta', 'montoofertado', 'oferta', 'importe'],
   rate: ['tasa', 'tasareferencial', 'tcea', 'tea'],
+  whatsappOptIn: ['autorizacionwhatsapp', 'consentimientowhatsapp', 'whatsappoptin', 'optinwhatsapp', 'optin'],
 } as const
+
+const hasWhatsAppConsent = (value: string) => ['si', 'yes', 'true', '1', 'autorizado', 'autorizada', 'acepta', 'accepted'].includes(norm(value))
+
+function chooseSheet(XLSX: typeof import('xlsx'), wb: import('xlsx').WorkBook) {
+  const ranked = wb.SheetNames.map((name) => {
+    const sheet = wb.Sheets[name]
+    const source = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false })
+    const headers = Object.keys(source[0] ?? {}).map(norm)
+    const has = (keys: readonly string[]) => keys.some((key) => headers.includes(key))
+    const score = Number(has(ALIASES.dni)) + Number(has(ALIASES.name)) + Number(has(ALIASES.phone)) + Number(has(ALIASES.surname))
+    return { name, sheet, source, score }
+  }).sort((a, b) => b.score - a.score || b.source.length - a.source.length)
+  return ranked[0]
+}
 
 export function ImportPage({ onDone }: { onDone: () => void }) {
   const toast = useToast()
   const { refresh } = useStats()
   const input = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState('')
+  const [sheetName, setSheetName] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
@@ -35,14 +52,24 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
       if (f.size > 10 * 1024 * 1024) throw new Error('El archivo supera los 10 MB.')
       const XLSX = await import('xlsx')
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' })
-      const sheet = wb.Sheets[wb.SheetNames[0]]
-      if (!sheet) throw new Error('No se encontró ninguna hoja en el archivo.')
-      const source = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false })
+      const selected = chooseSheet(XLSX, wb)
+      if (!selected?.sheet) throw new Error('No se encontró ninguna hoja en el archivo.')
+      if (selected.score < 3) throw new Error('No encontramos una hoja con columnas reconocibles de DNI, nombre y teléfono.')
+      setSheetName(selected.name)
+      const source = selected.source
       if (!source.length) throw new Error('El archivo no tiene filas.')
       const pick = (rec: Record<string, string>, keys: readonly string[]) => { for (const k of keys) if (rec[k]) return rec[k]; return '' }
       const parsed = source.map((item, i): Row => {
         const rec = Object.fromEntries(Object.entries(item).map(([k, v]) => [norm(k), String(v ?? '').trim()]))
-        const row: Row = { line: i + 2, dni: pick(rec, ALIASES.dni), name: pick(rec, ALIASES.name), phone: pick(rec, ALIASES.phone), offerAmount: pick(rec, ALIASES.offerAmount), rate: pick(rec, ALIASES.rate) }
+        const completeName = pick(rec, ['nombrecompleto', 'fullname'])
+        const composedName = [
+          pick(rec, ['nombrescliente', 'nombrecliente', 'nombres', 'nombre', 'name', 'cliente']),
+          pick(rec, ['apellidopaternocliente', 'apellidopaterno']),
+          pick(rec, ['apellidomaternocliente', 'apellidomaterno']),
+          pick(rec, ['apellidos', 'apellido']),
+        ].filter(Boolean).join(' ')
+        const fullName = completeName || composedName
+        const row: Row = { line: i + 2, dni: pick(rec, ALIASES.dni), name: fullName, phone: pick(rec, ALIASES.phone), offerAmount: pick(rec, ALIASES.offerAmount), rate: pick(rec, ALIASES.rate), whatsappOptIn: hasWhatsAppConsent(pick(rec, ALIASES.whatsappOptIn)) }
         const dni = row.dni.replace(/\D/g, '').padStart(row.dni ? 8 : 0, '0'); row.dni = dni
         const phone = row.phone.replace(/\D/g, '')
         if (!/^\d{8}$/.test(row.dni)) row.problem = 'DNI inválido (8 dígitos)'
@@ -60,18 +87,19 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
   const valid = rows.filter((r) => !r.problem)
   const invalid = rows.filter((r) => r.problem)
   const missingData = valid.filter((r) => !r.offerAmount || !r.rate).length
+  const withoutConsent = valid.filter((r) => !r.whatsappOptIn).length
 
   const send = async () => {
     setSending(true)
     try {
-      const res = await api<Result>('POST', '/prospects/import', { rows: valid.map(({ dni, name, phone, offerAmount, rate }) => ({ dni, name, phone, offerAmount: offerAmount || undefined, rate: rate || undefined })) })
+      const res = await api<Result>('POST', '/prospects/import', { rows: valid.map(({ dni, name, phone, offerAmount, rate, whatsappOptIn }) => ({ dni, name, phone, offerAmount: offerAmount || undefined, rate: rate || undefined, whatsappOptIn })) })
       setResult(res); setRows([]); void refresh()
       toast(`${res.created} prospecto(s) importados`)
     } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo importar', 'error') } finally { setSending(false) }
   }
 
   return <>
-    <PageHeader eyebrow="BASE DE CLIENTES" title="Importar prospectos" subtitle="Sube un Excel o CSV con DNI, Nombre y WhatsApp. Monto y Tasa son opcionales: puedes completarlos después." />
+    <PageHeader eyebrow="BASE DE CLIENTES" title="Importar prospectos" subtitle="Sube Excel o CSV con DNI, Nombre y WhatsApp. Los contactos sin autorización se guardan en espera y no reciben mensajes." />
     {!rows.length && !result && <section className="card">
       <div className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>
         <span className="dz-icon"><CloudUpload size={26} /></span>
@@ -82,17 +110,18 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
       </div>
       {loading && <Spinner label="Leyendo archivo…" />}
       {error && <div className="alert alert-error" role="alert"><TriangleAlert size={18} /><div><strong>No se pudo importar</strong><p>{error}</p></div></div>}
-      <div className="note">Columnas reconocidas: <b>DNI</b>, <b>Nombre</b>, <b>WhatsApp</b> (o Celular/Teléfono), y opcionales <b>Monto</b> y <b>Tasa</b>. Los duplicados por DNI o WhatsApp se omiten sin tocar lo que ya tienes.</div>
+      <div className="note">Columnas reconocidas: <b>DNI</b>, <b>Nombre</b>, <b>WhatsApp</b>, <b>Autorización WhatsApp</b> (Sí/No), y opcionales <b>Monto</b> y <b>Tasa</b>. Si falta la autorización, el contacto queda en espera. Los duplicados por DNI o WhatsApp se omiten.</div>
     </section>}
 
     {rows.length > 0 && <section className="card">
       <div className="import-summary">
-        <div><strong>{file}</strong><span className="muted-text">{rows.length} filas leídas</span></div>
-        <div className="stat-pills"><span className="pill green">{valid.length} listas</span>{invalid.length > 0 && <span className="pill red">{invalid.length} con problemas</span>}{missingData > 0 && <span className="pill amber">{missingData} sin monto o tasa</span>}</div>
+        <div><strong>{file}</strong><span className="muted-text">Hoja: {sheetName} · {rows.length} filas leídas</span></div>
+        <div className="stat-pills"><span className="pill green">{valid.length} válidas</span>{withoutConsent > 0 && <span className="pill amber">{withoutConsent} irán a espera</span>}{invalid.length > 0 && <span className="pill red">{invalid.length} con problemas</span>}{missingData > 0 && <span className="pill amber">{missingData} sin monto o tasa</span>}</div>
       </div>
-      {missingData > 0 && <div className="alert alert-info">{missingData} cliente(s) no tienen monto o tasa. Se importarán igual, pero no se enviarán hasta que los completes (si tu plantilla usa [monto] o [tasa]).</div>}
-      <div className="table-wrap"><table className="data responsive"><thead><tr><th>Fila</th><th>DNI</th><th>Nombre</th><th>WhatsApp</th><th className="num">Monto</th><th className="num">Tasa</th><th>Estado</th></tr></thead>
-        <tbody>{rows.slice(0, 100).map((r) => <tr key={r.line} className={r.problem ? 'row-bad' : ''}><td data-label="Fila">{r.line}</td><td data-label="DNI" className="mono">{r.dni}</td><td data-label="Nombre" className="cell-main">{r.name || '—'}</td><td data-label="WhatsApp">{r.phone || '—'}</td><td data-label="Monto" className="num">{r.offerAmount || '—'}</td><td data-label="Tasa" className="num">{r.rate || '—'}</td><td data-label="Estado">{r.problem ? <span className="badge badge-red"><i />{r.problem}</span> : <span className="badge badge-green"><i />Lista</span>}</td></tr>)}</tbody></table></div>
+      {withoutConsent > 0 && <div className="alert alert-warn">{withoutConsent} contacto(s) no tienen autorización marcada. Se importarán en espera y la cola no les enviará mensajes.</div>}
+      {missingData > 0 && <div className="alert alert-info">Los montos y las tasas son opcionales para el mensaje inicial; solo se pedirán si agregas esas variables a tu plantilla.</div>}
+      <div className="table-wrap"><table className="data responsive"><thead><tr><th>Fila</th><th>DNI</th><th>Nombre</th><th>WhatsApp</th><th>Autorización</th><th className="num">Monto</th><th className="num">Tasa</th><th>Estado</th></tr></thead>
+        <tbody>{rows.slice(0, 100).map((r) => <tr key={r.line} className={r.problem ? 'row-bad' : ''}><td data-label="Fila">{r.line}</td><td data-label="DNI" className="mono">{r.dni}</td><td data-label="Nombre" className="cell-main">{r.name || '—'}</td><td data-label="WhatsApp">{r.phone || '—'}</td><td data-label="Autorización">{r.whatsappOptIn ? 'Sí' : 'No'}</td><td data-label="Monto" className="num">{r.offerAmount || '—'}</td><td data-label="Tasa" className="num">{r.rate || '—'}</td><td data-label="Estado">{r.problem ? <span className="badge badge-red"><i />{r.problem}</span> : r.whatsappOptIn ? <span className="badge badge-green"><i />Lista</span> : <span className="badge badge-neutral"><i />En espera</span>}</td></tr>)}</tbody></table></div>
       {rows.length > 100 && <p className="muted-text small pad">Mostrando las primeras 100 filas de {rows.length}.</p>}
       <div className="form-actions"><Button onClick={() => { setRows([]); setFile('') }}>Cancelar</Button><Button variant="primary" busy={sending} disabled={!valid.length} onClick={() => void send()}>Importar {valid.length} prospecto(s)</Button></div>
     </section>}
@@ -100,7 +129,7 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
     {result && <section className="card result-card">
       <span className="wa-icon tone-green"><CheckCircle2 size={28} /></span>
       <h2>Importación terminada</h2>
-      <div className="stat-pills center"><span className="pill green">{result.created} nuevos</span><span className="pill amber">{result.duplicates} duplicados omitidos</span><span className="pill red">{result.invalid} inválidos</span></div>
+      <div className="stat-pills center"><span className="pill green">{result.created} nuevos</span><span className="pill amber">{result.onHold} en espera sin autorización</span><span className="pill amber">{result.duplicates} duplicados omitidos</span><span className="pill red">{result.invalid} inválidos</span></div>
       {[...result.duplicateRows, ...result.invalidRows].length > 0 && <details className="details"><summary>Ver detalle</summary><ul>{[...result.duplicateRows, ...result.invalidRows].map((r, i) => <li key={i}>Fila {r.row}: {r.reason}</li>)}</ul></details>}
       <div className="btn-row"><Button onClick={() => setResult(null)}>Importar otro archivo</Button><Button variant="primary" onClick={onDone}>Ver prospectos</Button></div>
     </section>}

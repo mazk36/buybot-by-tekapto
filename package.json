@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n web,api -c cyan,magenta \"vite\" \"pnpm dev:server\"",
     "dev:server": "tsx watch --env-file-if-exists=.env server/src/index.ts",
+    "reset:login": "tsx --env-file-if-exists=.env server/dev/reset-login.ts",
     "test:smoke": "tsx server/dev/smoke.ts",
     "mock:evolution": "tsx server/dev/mock-evolution.ts",
     "build": "tsc -b && vite build",

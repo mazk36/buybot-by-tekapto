@@ -34,7 +34,7 @@ export function SettingsPage({ dark, onToggleTheme }: { dark: boolean; onToggleT
     <div className="settings-grid">
       <section className="card">
         <h3 className="card-title">Mensaje</h3>
-        <Field label="Plantilla" hint="Variables: [nombre] [monto] [tasa]. Alternativas al azar: {Hola|Buen día} (evita mensajes idénticos).">
+        <Field label="Plantilla" hint="Variables: [nombre] [monto] [tasa]. Todos los contactos reciben la misma estructura del mensaje.">
           <textarea rows={8} value={form.messageTemplate} onChange={(e) => set('messageTemplate', e.target.value)} maxLength={1500} />
         </Field>
         <div className="btn-row"><Button variant="ghost" onClick={() => set('messageTemplate', saved.defaultTemplate)}>Restaurar predeterminada</Button></div>
@@ -51,7 +51,7 @@ export function SettingsPage({ dark, onToggleTheme }: { dark: boolean; onToggleT
           <Field label="Enviar desde"><input type="time" value={form.windowStart} onChange={(e) => set('windowStart', e.target.value)} /></Field>
           <Field label="Hasta"><input type="time" value={form.windowEnd} onChange={(e) => set('windowEnd', e.target.value)} /></Field>
         </div>
-        <div className="note">Pausas largas y aleatorias, y un límite diario razonable, reducen el riesgo de que WhatsApp bloquee el número. Se recomienda empezar con pocos mensajes e ir subiendo.</div>
+        <div className="note">La pausa se aplica entre mensajes. El valor predeterminado es 30 segundos; ajusta el horario y el límite diario a tu operación.</div>
       </section>
 
       <section className="card">

@@ -34,7 +34,7 @@ class Queue {
       }
       audit('sistema', 'message.interrupted', 'prospect', m.prospect_id, m.name, 'El servidor se detuvo durante el envío')
     }
-    db.prepare(`UPDATE prospects SET status = 'pending' WHERE status = 'sending'`).run()
+    db.prepare(`UPDATE prospects SET status = CASE WHEN whatsapp_opt_in = 1 THEN 'pending' ELSE 'on_hold' END WHERE status = 'sending'`).run()
     const saved = getRaw('campaign_status')
     // Tras reiniciar el servidor nunca arranca solo: si estaba corriendo queda en pausa.
     this.status = saved === 'running' || saved === 'paused' ? 'paused' : 'stopped'
@@ -61,8 +61,8 @@ class Queue {
 
   start(actor: string): { ok: true } | { ok: false; error: string } {
     if (this.status === 'running') return { ok: true }
-    const pending = (db.prepare(`SELECT COUNT(*) AS n FROM prospects WHERE status = 'pending'`).get() as { n: number }).n
-    if (!pending) return { ok: false, error: 'No hay prospectos pendientes para enviar.' }
+    const pending = (db.prepare(`SELECT COUNT(*) AS n FROM prospects WHERE status = 'pending' AND whatsapp_opt_in = 1`).get() as { n: number }).n
+    if (!pending) return { ok: false, error: 'No hay prospectos pendientes con autorización de WhatsApp.' }
     const { messageTemplate, delayMin, delayMax } = getSettings()
     if (!messageTemplate.trim()) return { ok: false, error: 'Escribe una plantilla de mensaje en Configuración.' }
     if (delayMin > delayMax) return { ok: false, error: 'La pausa mínima no puede ser mayor que la máxima.' }
@@ -105,7 +105,7 @@ class Queue {
   private pickNext(): { prospect: ProspectRow | null; blocked: number } {
     const { messageTemplate } = getSettings()
     const rows = db.prepare(
-      `SELECT id, dni, name, phone, offer_amount, rate, attempts FROM prospects WHERE status = 'pending' ORDER BY id LIMIT 500`,
+      `SELECT id, dni, name, phone, offer_amount, rate, attempts FROM prospects WHERE status = 'pending' AND whatsapp_opt_in = 1 ORDER BY id LIMIT 500`,
     ).all() as unknown as ProspectRow[]
     let blocked = 0
     for (const row of rows) {
@@ -166,7 +166,7 @@ class Queue {
     let messageId: number
     try {
       messageId = tx(() => {
-        const claimed = db.prepare(`UPDATE prospects SET status = 'sending', updated_at = ? WHERE id = ? AND status = 'pending'`).run(nowIso(), prospect.id)
+        const claimed = db.prepare(`UPDATE prospects SET status = 'sending', updated_at = ? WHERE id = ? AND status = 'pending' AND whatsapp_opt_in = 1`).run(nowIso(), prospect.id)
         if (!claimed.changes) throw new Error('claimed')
         const res = db.prepare(`INSERT INTO messages(prospect_id,name,phone,body,status) VALUES(?,?,?,?, 'sending')`).run(prospect.id, prospect.name, prospect.phone, body)
         return Number(res.lastInsertRowid)
@@ -201,10 +201,9 @@ class Queue {
       return
     }
 
-    // 2) Enviar con "escribiendo…" para parecer humano.
+    // 2) Enviar el mensaje; el intervalo configurado se aplica después del envío.
     try {
-      const typing = Math.min(8000, 1200 + body.length * 25)
-      const remoteId = await evolution.sendText(config.instanceName, prospect.phone, body, typing)
+      const remoteId = await evolution.sendText(config.instanceName, prospect.phone, body, 0)
       const at = nowIso()
       tx(() => {
         db.prepare(`UPDATE messages SET status = 'sent', sent_at = ?, remote_id = ? WHERE id = ?`).run(at, remoteId, messageId)

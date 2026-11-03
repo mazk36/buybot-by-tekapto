@@ -127,12 +127,13 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
   const [form, setForm] = useState({
     dni: prospect?.dni ?? '', name: prospect?.name ?? '', phone: prospect ? formatPhone(prospect.phone) : '',
     offerAmount: prospect?.offerAmount?.toString() ?? '', rate: prospect?.rate?.toString() ?? '', notes: prospect?.notes ?? '',
+    whatsappOptIn: prospect?.whatsappOptIn ?? false,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [messages, setMessages] = useState<Msg[] | null>(null)
   const [confirm, setConfirm] = useState<'delete' | 'resend' | null>(null)
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set = (k: Exclude<keyof typeof form, 'whatsappOptIn'>) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const initial = useMemo(() => JSON.stringify(form), [])  // eslint-disable-line react-hooks/exhaustive-deps
   const dirty = JSON.stringify(form) !== initial
 
@@ -143,7 +144,7 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
   const save = async () => {
     setBusy(true); setError('')
     try {
-      const body = { dni: form.dni, name: form.name, phone: form.phone, offerAmount: form.offerAmount === '' ? null : form.offerAmount, rate: form.rate === '' ? null : form.rate, notes: form.notes }
+      const body = { dni: form.dni, name: form.name, phone: form.phone, offerAmount: form.offerAmount === '' ? null : form.offerAmount, rate: form.rate === '' ? null : form.rate, notes: form.notes, whatsappOptIn: form.whatsappOptIn }
       if (prospect) await api('PATCH', `/prospects/${prospect.id}`, body)
       else await api('POST', '/prospects', body)
       toast(prospect ? 'Cambios guardados' : 'Prospecto agregado')
@@ -161,8 +162,8 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
       footer={<>
         {prospect && <div className="foot-left">
           <Button variant="ghost" icon={<Trash2 size={15} />} onClick={() => setConfirm('delete')}>Eliminar</Button>
-          {(prospect.status === 'sent' || prospect.status === 'failed' || prospect.status === 'no_whatsapp') && <Button variant="ghost" icon={<RotateCcw size={15} />} onClick={() => setConfirm('resend')}>Volver a enviar</Button>}
-          {prospect.status === 'on_hold' && <Button variant="ghost" icon={<Play size={15} />} onClick={() => void quick('pending')}>Liberar</Button>}
+          {(prospect.status === 'sent' || prospect.status === 'failed' || prospect.status === 'no_whatsapp') && prospect.whatsappOptIn && <Button variant="ghost" icon={<RotateCcw size={15} />} onClick={() => setConfirm('resend')}>Volver a enviar</Button>}
+          {prospect.status === 'on_hold' && prospect.whatsappOptIn && <Button variant="ghost" icon={<Play size={15} />} onClick={() => void quick('pending')}>Liberar</Button>}
           {prospect.status === 'pending' && <Button variant="ghost" icon={<Pause size={15} />} onClick={() => void quick('on_hold')}>Poner en espera</Button>}
         </div>}
         <Button onClick={onClose}>Cerrar</Button>
@@ -180,6 +181,7 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
         <Field label="WhatsApp" hint="Celular de 9 dígitos"><input value={form.phone} onChange={set('phone')} inputMode="tel" disabled={locked} /></Field>
         <Field label="Monto ofertado (S/)" hint="Opcional hasta enviar"><input value={form.offerAmount} onChange={set('offerAmount')} inputMode="decimal" placeholder="32500" /></Field>
         <Field label="Tasa referencial (%)"><input value={form.rate} onChange={set('rate')} inputMode="decimal" placeholder="11.9" /></Field>
+        <label className="consent-field span-2"><input type="checkbox" checked={form.whatsappOptIn} disabled={locked} onChange={(e) => setForm((f) => ({ ...f, whatsappOptIn: e.target.checked }))} /><span><strong>Autorización explícita para WhatsApp</strong><small>Marca solo si la persona aceptó recibir mensajes de BuyBot por WhatsApp. Sin autorización, el registro queda en espera.</small></span></label>
         <div className="span-2"><Field label="Notas internas"><textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="Ej. Pidió que lo llamen en la tarde" /></Field></div>
       </div>
       {error && <p className="field-error" role="alert">{error}</p>}

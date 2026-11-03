@@ -29,6 +29,5 @@ export function downloadUrl(url: string) {
   a.remove()
 }
 export function renderPreview(template: string, name = 'Carlos Mendoza', amount = 32500, rate = 11.9): string {
-  const spun = template.replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_, g: string) => g.split('|')[0].trim())
-  return spun.replace(/\[nombre\]/gi, name).replace(/\[monto\]/gi, money.format(amount)).replace(/\[tasa\]/gi, `${rate.toFixed(2)} %`)
+  return template.replace(/\[nombre\]/gi, name).replace(/\[monto\]/gi, money.format(amount)).replace(/\[tasa\]/gi, `${rate.toFixed(2)} %`)
 }

@@ -36,18 +36,22 @@ if (me.data.needsSetup) {
 
 // Prospectos
 await req('PUT', '/api/settings', { dailyLimit: 100, delayMin: 5, delayMax: 5, windowStart: '00:00', windowEnd: '23:59', messageTemplate: 'Hola [nombre], oferta de [monto] a [tasa].' })
-const created = await req('POST', '/api/prospects', { dni: '70000001', name: 'carlos MENDOZA', phone: '999 555 101', offerAmount: '32,500', rate: '11.9' })
+const created = await req('POST', '/api/prospects', { dni: '70000001', name: 'carlos MENDOZA', phone: '999 555 101', offerAmount: '32,500', rate: '11.9', whatsappOptIn: true })
 check('Crear prospecto (nombre normalizado, teléfono 51…)', created.status === 201 && created.data.prospect.name === 'Carlos Mendoza' && created.data.prospect.phone === '51999555101', created.data)
-const dup = await req('POST', '/api/prospects', { dni: '70000001', name: 'Otro', phone: '999555102' })
+const noConsent = await req('POST', '/api/prospects', { dni: '70000010', name: 'Sin autorización', phone: '999555106' })
+check('Sin autorización queda en espera', noConsent.status === 201 && noConsent.data.prospect.status === 'on_hold' && !noConsent.data.prospect.whatsappOptIn, noConsent.data)
+const noConsentRelease = await req('PATCH', `/api/prospects/${noConsent.data.prospect.id}`, { status: 'pending' })
+check('No se libera un contacto sin autorización', noConsentRelease.status === 409, noConsentRelease.data)
+const dup = await req('POST', '/api/prospects', { dni: '70000001', name: 'Otro', phone: '999555102', whatsappOptIn: true })
 check('DNI duplicado rechazado (409)', dup.status === 409, dup.data)
 const badPhone = await req('POST', '/api/prospects', { dni: '70000009', name: 'Sin telefono', phone: '12345' })
 check('Teléfono inválido rechazado (400)', badPhone.status === 400, badPhone.data)
 
 const imp = await req('POST', '/api/prospects/import', { rows: [
-  { dni: '70000002', name: 'ana torres', phone: '999555102', offerAmount: 18000, rate: 12.5 },
-  { dni: '70000003', name: 'sin whatsapp', phone: '999555100', offerAmount: 20000, rate: 12 },   // termina en 0 → no existe en el mock
-  { dni: '70000004', name: 'sin datos', phone: '999555104' },                                      // sin monto/tasa → no se envía
-  { dni: '70000001', name: 'dup', phone: '999555199' },
+  { dni: '70000002', name: 'ana torres', phone: '999555102', offerAmount: 18000, rate: 12.5, whatsappOptIn: true },
+  { dni: '70000003', name: 'sin whatsapp', phone: '999555100', offerAmount: 20000, rate: 12, whatsappOptIn: true },   // termina en 0 → no existe en el mock
+  { dni: '70000004', name: 'sin datos', phone: '999555104', whatsappOptIn: true },                                      // sin monto/tasa → no se envía
+  { dni: '70000001', name: 'dup', phone: '999555199', whatsappOptIn: true },
   { dni: 'abc', name: 'mala fila', phone: '999555198' },
 ] })
 check('Importar: 3 nuevos, 1 duplicado, 1 inválido', imp.data.created === 3 && imp.data.duplicates === 1 && imp.data.invalid === 1, imp.data)

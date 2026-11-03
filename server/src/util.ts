@@ -50,11 +50,7 @@ export function missingVars(template: string, p: Renderable): string[] {
 }
 
 export function renderMessage(template: string, p: Renderable): string {
-  const spun = template.replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_, group: string) => {
-    const options = group.split('|')
-    return options[Math.floor(Math.random() * options.length)].trim()
-  })
-  return spun
+  return template
     .replace(/\[nombre\]/gi, titleCase(p.name))
     .replace(/\[monto\]/gi, p.offer_amount === null ? '' : money.format(p.offer_amount))
     .replace(/\[tasa\]/gi, p.rate === null ? '' : `${p.rate.toFixed(2)} %`)

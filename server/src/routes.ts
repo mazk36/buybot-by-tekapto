@@ -14,6 +14,7 @@ const actor = (request: FastifyRequest) => request.user?.email ?? 'sistema'
 
 const toProspect = (r: any) => ({
   id: r.id, dni: r.dni, name: r.name, phone: r.phone, offerAmount: r.offer_amount, rate: r.rate, notes: r.notes,
+  whatsappOptIn: r.whatsapp_opt_in === 1,
   status: r.status as Status, attempts: r.attempts, lastError: r.last_error, sentAt: r.sent_at,
   repliedAt: r.replied_at, replyText: r.reply_text, createdAt: r.created_at, updatedAt: r.updated_at,
 })
@@ -22,7 +23,7 @@ class HttpError extends Error { constructor(readonly status: number, message: st
 const bad = (message: string) => new HttpError(400, message)
 
 function parseProspectInput(body: any, partial: boolean) {
-  const out: { dni?: string; name?: string; phone?: string; offerAmount?: number | null; rate?: number | null; notes?: string } = {}
+  const out: { dni?: string; name?: string; phone?: string; offerAmount?: number | null; rate?: number | null; notes?: string; whatsappOptIn?: boolean } = {}
   if (!partial || body.dni !== undefined) {
     const dni = String(body.dni ?? '').trim()
     if (!isValidDni(dni)) throw bad('El DNI debe tener 8 dígitos.')
@@ -49,6 +50,10 @@ function parseProspectInput(body: any, partial: boolean) {
     out.rate = n
   }
   if (body.notes !== undefined) out.notes = String(body.notes).slice(0, 1000)
+  if (body.whatsappOptIn !== undefined) {
+    if (typeof body.whatsappOptIn !== 'boolean') throw bad('La autorización de WhatsApp debe ser sí o no.')
+    out.whatsappOptIn = body.whatsappOptIn
+  } else if (!partial) out.whatsappOptIn = false
   return out
 }
 
@@ -110,8 +115,8 @@ export async function registerRoutes(app: FastifyInstance) {
         const row = db.prepare('SELECT id, name, status FROM prospects WHERE phone = ?').get(phone) as { id: number; name: string; status: Status } | undefined
         if (!row) continue
         const optOut = /^\s*(stop|baja|no\s*gracias|no\s*deseo|no)\s*[.!]*\s*$/i.test(text)
-        db.prepare(`UPDATE prospects SET replied_at = ?, reply_text = ?, status = CASE WHEN ? THEN 'opted_out' ELSE status END, updated_at = ? WHERE id = ?`)
-          .run(nowIso(), text.slice(0, 500), optOut ? 1 : 0, nowIso(), row.id)
+        db.prepare(`UPDATE prospects SET replied_at = ?, reply_text = ?, status = CASE WHEN ? THEN 'opted_out' ELSE status END, whatsapp_opt_in = CASE WHEN ? THEN 0 ELSE whatsapp_opt_in END, updated_at = ? WHERE id = ?`)
+          .run(nowIso(), text.slice(0, 500), optOut ? 1 : 0, optOut ? 1 : 0, nowIso(), row.id)
         audit('cliente', optOut ? 'prospect.opt_out' : 'prospect.reply', 'prospect', row.id, row.name, text.slice(0, 200))
       }
     }
@@ -213,8 +218,8 @@ export async function registerRoutes(app: FastifyInstance) {
       const rows = db.prepare(`SELECT * FROM prospects ${sql} ORDER BY id`).all(...params) as any[]
       audit(actor(request), 'prospects.export', 'prospect', null, `${rows.length} filas`)
       return sendCsv(reply, 'buybot-prospectos.csv', [
-        ['DNI', 'Nombre', 'WhatsApp', 'Monto', 'Tasa', 'Estado', 'Enviado', 'Respondió', 'Notas'],
-        ...rows.map((r) => [r.dni, r.name, r.phone, r.offer_amount, r.rate, r.status, r.sent_at, r.replied_at, r.notes]),
+        ['DNI', 'Nombre', 'WhatsApp', 'Autorización WhatsApp', 'Monto', 'Tasa', 'Estado', 'Enviado', 'Respondió', 'Notas'],
+        ...rows.map((r) => [r.dni, r.name, r.phone, r.whatsapp_opt_in ? 'Sí' : 'No', r.offer_amount, r.rate, r.status, r.sent_at, r.replied_at, r.notes]),
       ])
     })
 
@@ -228,8 +233,9 @@ export async function registerRoutes(app: FastifyInstance) {
     api.post('/api/prospects', async (request, reply) => {
       const data = parseProspectInput(request.body as any, false)
       try {
-        const res = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes) VALUES(?,?,?,?,?,?)')
-          .run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '')
+        const initialStatus = data.whatsappOptIn ? 'pending' : 'on_hold'
+        const res = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes,whatsapp_opt_in,status) VALUES(?,?,?,?,?,?,?,?)')
+          .run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', data.whatsappOptIn ? 1 : 0, initialStatus)
         audit(actor(request), 'prospect.create', 'prospect', Number(res.lastInsertRowid), data.name!, data)
         const row = db.prepare('SELECT * FROM prospects WHERE id = ?').get(Number(res.lastInsertRowid))
         return reply.code(201).send({ prospect: toProspect(row) })
@@ -263,20 +269,23 @@ export async function registerRoutes(app: FastifyInstance) {
         dni: data.dni ?? current.dni, name: data.name ?? current.name, phone: data.phone ?? current.phone,
         offer_amount: data.offerAmount !== undefined ? data.offerAmount : current.offer_amount,
         rate: data.rate !== undefined ? data.rate : current.rate, notes: data.notes ?? current.notes,
+        whatsapp_opt_in: data.whatsappOptIn !== undefined ? (data.whatsappOptIn ? 1 : 0) : current.whatsapp_opt_in,
         status: status ?? current.status,
       } }
+      if (status === 'pending' && next.whatsapp_opt_in !== 1) throw new HttpError(409, 'Registra primero la autorización de WhatsApp para liberar este contacto.')
+      if (data.whatsappOptIn === false && ['pending', 'failed', 'no_whatsapp'].includes(current.status)) next.status = 'on_hold'
       // Si un envío falló por número inválido y se corrige el teléfono, vuelve a pendiente.
-      if (data.phone !== undefined && data.phone !== current.phone && ['failed', 'no_whatsapp'].includes(current.status)) { next.status = 'pending'; next.attempts = 0; next.last_error = null }
+      if (data.phone !== undefined && data.phone !== current.phone && ['failed', 'no_whatsapp'].includes(current.status) && next.whatsapp_opt_in === 1) { next.status = 'pending'; next.attempts = 0; next.last_error = null }
       try {
-        db.prepare('UPDATE prospects SET dni=?, name=?, phone=?, offer_amount=?, rate=?, notes=?, status=?, attempts=?, last_error=?, updated_at=? WHERE id=?')
-          .run(next.dni, next.name, next.phone, next.offer_amount, next.rate, next.notes, next.status, next.attempts, next.last_error, nowIso(), id)
+        db.prepare('UPDATE prospects SET dni=?, name=?, phone=?, offer_amount=?, rate=?, notes=?, whatsapp_opt_in=?, status=?, attempts=?, last_error=?, updated_at=? WHERE id=?')
+          .run(next.dni, next.name, next.phone, next.offer_amount, next.rate, next.notes, next.whatsapp_opt_in, next.status, next.attempts, next.last_error, nowIso(), id)
       } catch (error) {
         const msg = uniqueConflict(error)
         if (msg) throw new HttpError(409, msg)
         throw error
       }
       const changes: Record<string, [unknown, unknown]> = {}
-      for (const k of ['dni', 'name', 'phone', 'offer_amount', 'rate', 'notes', 'status'] as const) if (current[k] !== next[k]) changes[k] = [current[k], next[k]]
+      for (const k of ['dni', 'name', 'phone', 'offer_amount', 'rate', 'notes', 'whatsapp_opt_in', 'status'] as const) if (current[k] !== next[k]) changes[k] = [current[k], next[k]]
       if (Object.keys(changes).length) audit(actor(request), 'prospect.update', 'prospect', id, next.name, changes)
       return { prospect: toProspect(db.prepare('SELECT * FROM prospects WHERE id = ?').get(id)) }
     })
@@ -299,9 +308,10 @@ export async function registerRoutes(app: FastifyInstance) {
       if (!current) throw new HttpError(404, 'Prospecto no encontrado.')
       if (current.status === 'sending') throw new HttpError(409, 'El mensaje se está enviando en este momento.')
       if (current.status === 'opted_out') throw new HttpError(409, 'El cliente pidió no recibir mensajes.')
+      if (current.whatsapp_opt_in !== 1) throw new HttpError(409, 'No se puede reenviar: falta la autorización de WhatsApp.')
       tx(() => {
         db.prepare(`UPDATE messages SET status = 'superseded' WHERE prospect_id = ? AND status IN ('sent','unknown','failed')`).run(id)
-        db.prepare(`UPDATE prospects SET status = 'pending', attempts = 0, last_error = NULL, sent_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), id)
+        db.prepare(`UPDATE prospects SET status = 'pending', attempts = 0, last_error = NULL, sent_at = NULL, updated_at = ? WHERE id = ? AND whatsapp_opt_in = 1`).run(nowIso(), id)
       })
       audit(actor(request), 'prospect.requeue', 'prospect', id, current.name, `Estado anterior: ${current.status}`)
       return { prospect: toProspect(db.prepare('SELECT * FROM prospects WHERE id = ?').get(id)) }
@@ -318,7 +328,7 @@ export async function registerRoutes(app: FastifyInstance) {
       } else if (action === 'hold') {
         affected = Number(db.prepare(`UPDATE prospects SET status='on_hold', updated_at=? WHERE id IN (${marks}) AND status IN ('pending','failed','no_whatsapp')`).run(nowIso(), ...list).changes)
       } else if (action === 'release') {
-        affected = Number(db.prepare(`UPDATE prospects SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE id IN (${marks}) AND status IN ('on_hold','failed','no_whatsapp')`).run(nowIso(), ...list).changes)
+        affected = Number(db.prepare(`UPDATE prospects SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE id IN (${marks}) AND status IN ('on_hold','failed','no_whatsapp') AND whatsapp_opt_in = 1`).run(nowIso(), ...list).changes)
       } else throw bad('Acción no válida.')
       audit(actor(request), `prospects.bulk_${action}`, 'prospect', null, `${affected} de ${list.length}`)
       return { affected, skipped: list.length - affected }
@@ -331,13 +341,16 @@ export async function registerRoutes(app: FastifyInstance) {
       const invalid: { row: number; reason: string }[] = []
       const duplicates: { row: number; reason: string }[] = []
       let created = 0
+      let onHold = 0
       tx(() => {
-        const insert = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes) VALUES(?,?,?,?,?,?)')
+        const insert = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes,whatsapp_opt_in,status) VALUES(?,?,?,?,?,?,?,?)')
         rows.forEach((raw, index) => {
           try {
             const data = parseProspectInput(raw, false)
-            insert.run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '')
+            const initialStatus = data.whatsappOptIn ? 'pending' : 'on_hold'
+            insert.run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', data.whatsappOptIn ? 1 : 0, initialStatus)
             created++
+            if (!data.whatsappOptIn) onHold++
           } catch (error) {
             const dup = uniqueConflict(error)
             if (dup) duplicates.push({ row: index + 2, reason: dup })
@@ -345,8 +358,8 @@ export async function registerRoutes(app: FastifyInstance) {
           }
         })
       })
-      audit(actor(request), 'prospects.import', 'prospect', null, `${created} nuevos`, { created, duplicates: duplicates.length, invalid: invalid.length })
-      return { created, duplicates: duplicates.length, invalid: invalid.length, duplicateRows: duplicates.slice(0, 50), invalidRows: invalid.slice(0, 50) }
+      audit(actor(request), 'prospects.import', 'prospect', null, `${created} nuevos`, { created, onHold, duplicates: duplicates.length, invalid: invalid.length })
+      return { created, onHold, duplicates: duplicates.length, invalid: invalid.length, duplicateRows: duplicates.slice(0, 50), invalidRows: invalid.slice(0, 50) }
     })
 
     // ----- Campaña -----
@@ -379,8 +392,9 @@ export async function registerRoutes(app: FastifyInstance) {
       if (!phone) throw bad('Escribe un celular válido de 9 dígitos.')
       const status = await whatsapp.refresh(true)
       if (status.state !== 'connected') throw new HttpError(409, 'Conecta WhatsApp antes de enviar una prueba.')
+      if (!status.phone || phone !== status.phone) throw new HttpError(403, 'El mensaje de prueba solo se puede enviar al mismo número conectado.')
       const body = renderMessage(getSettings().messageTemplate, { name: 'Cliente de prueba', offer_amount: 25000, rate: 11.9 })
-      await evolution.sendText(config.instanceName, phone, `[PRUEBA] ${body}`, 1500)
+      await evolution.sendText(config.instanceName, phone, `[PRUEBA] ${body}`, 0)
       audit(actor(request), 'whatsapp.test', 'whatsapp', null, 'Mensaje de prueba', phone)
       return { ok: true }
     })

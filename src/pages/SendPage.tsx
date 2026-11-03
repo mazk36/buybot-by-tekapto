@@ -40,7 +40,7 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
   }
 
   return <>
-    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Controla el envío automático. Los mensajes salen uno por uno con pausas aleatorias."
+    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Controla el envío automático. Los mensajes salen uno por uno, con una pausa predeterminada de 30 segundos."
       actions={<span className={`status-pill ${c.status}`}><i />{label}</span>} />
 
     {wa.state !== 'connected' && <div className="alert alert-warn"><WifiOff size={18} /><div><strong>WhatsApp no está conectado</strong><p>El envío no avanza hasta que vincules un número.</p></div><Button onClick={() => goto('whatsapp')}>Conectar</Button></div>}

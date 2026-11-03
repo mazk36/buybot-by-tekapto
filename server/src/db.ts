@@ -69,6 +69,10 @@ const migrations: string[] = [
   CREATE INDEX idx_audit_ts ON audit_log(ts DESC);
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  `
+  ALTER TABLE prospects ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1));
+  UPDATE prospects SET status = 'on_hold' WHERE status = 'pending' AND whatsapp_opt_in = 0;
+  `,
 ]
 
 function migrate() {
@@ -112,13 +116,13 @@ export interface Settings {
 }
 
 export const DEFAULT_TEMPLATE =
-  '{Hola|Buen día} [nombre] 👋\n\nTenemos disponible para ti una opción de compra de deuda por hasta [monto], con una tasa referencial de [tasa].\n\nSi deseas conocer más detalles, puedo ayudarte por este medio.\n\nSi no deseas recibir más mensajes, responde BAJA.'
+  'Hola [nombre] 👋 Soy Cristina, del equipo de BuyBot. Queríamos saber si te interesa conversar sobre una posible opción de compra de deuda.\n\nSi prefieres no recibir más mensajes, responde BAJA.'
 
 const defaults: Record<string, string> = {
   messageTemplate: DEFAULT_TEMPLATE,
   dailyLimit: '100',
-  delayMin: '25',
-  delayMax: '70',
+  delayMin: '30',
+  delayMax: '30',
   windowStart: '08:00',
   windowEnd: '20:00',
 }
