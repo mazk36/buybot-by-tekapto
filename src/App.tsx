@@ -106,7 +106,7 @@ function Shell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => vo
         {page === 'import' && <ImportPage onDone={() => { setFilter('all'); goto('prospects') }} />}
         {page === 'send' && <SendPage goto={(p) => { if (p === 'prospects') setFilter('pending'); goto(p) }} />}
         {page === 'whatsapp' && <WhatsAppPage />}
-        {page === 'review' && <ReviewPage openProspects={() => { setFilter('failed'); goto('prospects') }} />}
+        {page === 'review' && <ReviewPage openProspects={() => { setFilter('all'); goto('prospects') }} />}
         {page === 'history' && <HistoryPage />}
         {page === 'settings' && <SettingsPage dark={dark} onToggleTheme={onToggleTheme} />}
         {page === 'tutorial' && <TutorialPage goto={goto} />}

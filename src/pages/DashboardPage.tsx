@@ -4,10 +4,12 @@ import { api } from '../api'
 import type { AuditEvent, BaseSummary, Paged } from '../api'
 import { Button, Empty, PageHeader, Spinner } from '../ui'
 import { useStats, useUser } from '../store'
-import { formatMoney, formatTime, greeting } from '../format'
+import { formatTime, greeting } from '../format'
 import { waLabel } from './WhatsAppPage'
 import type { Page } from '../App'
 import { eventText } from './HistoryPage'
+
+const formatSales = (amount: number) => new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(amount)
 
 export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
   const { stats } = useStats()
@@ -33,7 +35,7 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
       </ol>
     </section>}
 
-    <section className="card goal"><span className="muted-label">VENTAS ACUMULADAS</span><div className="big-count"><strong>{formatMoney(stats.salesTotal)}</strong></div></section>
+    <section className="card goal"><span className="muted-label">VENTAS ACUMULADAS</span><div className="big-count"><strong>{formatSales(stats.salesTotal)}</strong></div></section>
 
     <section className="card goal">
       <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>mensajes entre todos los números</span></div><p className="muted-text small">Límite configurado: {stats.dailyLimit} intentos diarios por número.</p></div>
@@ -43,7 +45,7 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
     <section className="kpis" aria-label="Indicadores">
       <Kpi icon={<Users size={18} />} label="Prospectos" value={stats.total} detail={`${stats.counts.pending} pendientes`} onClick={() => goto('prospects')} />
       <Kpi icon={<MessageSquareText size={18} />} label="Contactados" value={stats.counts.sent} detail={`${stats.replied} respondieron`} tone="green" onClick={() => goto('prospects')} />
-      <Kpi icon={<CheckCircle2 size={18} />} label="Ventas" value={formatMoney(stats.salesTotal)} small detail="Registrar ventas" onClick={() => goto('review')} />
+      <Kpi icon={<CheckCircle2 size={18} />} label="Ventas" value={formatSales(stats.salesTotal)} small detail="Registrar ventas" onClick={() => goto('review')} />
       <Kpi icon={<Wifi size={18} />} label="WhatsApp" value={wa.text} small detail={stats.whatsapp.phone ? `+${stats.whatsapp.phone}` : 'Toca para administrar'} tone={wa.tone} onClick={() => goto('whatsapp')} />
     </section>
 
