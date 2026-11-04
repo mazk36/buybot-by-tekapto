@@ -156,6 +156,7 @@ table.responsive tbody tr:hover { background: var(--surface-2); } .data tbody tr
 .big-count { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; } .big-count strong { font-size: 44px; line-height: 1; letter-spacing: -.03em; } .big-count span { color: var(--muted); font-size: 17px; }
 .progress { height: 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; } .progress i { display: block; height: 100%; border-radius: 99px; background: var(--signal); transition: width .5s ease; }
 .goal-foot, .send-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; color: var(--ink-2); font-size: 14px; }
+.mix-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .kpi { display: grid; gap: 4px; padding: 16px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); transition: border-color .15s, transform .15s; } .kpi:hover { border-color: var(--line-strong); transform: translateY(-1px); }
 .kpi-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); margin-bottom: 6px; }
@@ -181,6 +182,7 @@ table.responsive tbody tr:hover { background: var(--surface-2); } .data tbody tr
 .tutorial-note { margin-top: 16px; }
 .feed { list-style: none; margin: 0; padding: 0; } .feed li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); } .feed li:last-child { border: 0; }
 .feed li > div { flex: 1; min-width: 0; } .feed strong, .feed small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .feed strong { font-weight: 600; font-size: 14px; } .feed small { color: var(--muted); font-size: 12.5px; } .feed time { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.base-feed { margin-top: 8px; } .base-count { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; } .base-count b { color: var(--ink); }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); flex: none; } .dot-green { background: var(--green); } .dot-red { background: var(--red); } .dot-amber { background: #e0a020; } .dot-blue { background: var(--blue); }
 .send-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; } .send-controls { display: flex; flex-wrap: wrap; gap: 8px; }
 .kv { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 20px; margin: 0 0 12px; } .kv div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); } .kv dt { color: var(--muted); } .kv dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -279,3 +281,9 @@ table.responsive tbody tr:hover { background: var(--surface-2); } .data tbody tr
   .pager { justify-content: center; } .auth-card { padding: 24px 18px; } .topbar-title { font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Conexiones de WhatsApp */
+.wa-accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.wa-account { display: grid; gap: 5px; text-align: left; padding: 14px 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.wa-account.active { border-color: var(--red); box-shadow: inset 3px 0 0 var(--red); }
+.wa-account span, .wa-account small { color: var(--muted); overflow-wrap: anywhere; }

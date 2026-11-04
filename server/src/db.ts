@@ -73,6 +73,24 @@ const migrations: string[] = [
   ALTER TABLE prospects ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1));
   UPDATE prospects SET status = 'on_hold' WHERE status = 'pending' AND whatsapp_opt_in = 0;
   `,
+  `
+  CREATE TABLE import_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  ALTER TABLE prospects ADD COLUMN import_batch_id INTEGER REFERENCES import_batches(id);
+  ALTER TABLE prospects ADD COLUMN message_name TEXT;
+  CREATE INDEX idx_prospects_batch_status ON prospects(import_batch_id, status, id);
+  `,
+  `
+  ALTER TABLE messages ADD COLUMN sender_instance TEXT;
+  ALTER TABLE messages ADD COLUMN sender_phone TEXT;
+  ALTER TABLE messages ADD COLUMN send_started_at TEXT;
+  UPDATE messages SET send_started_at = COALESCE(sent_at, created_at)
+    WHERE status IN ('sending', 'sent', 'unknown') OR sent_at IS NOT NULL;
+  CREATE INDEX idx_messages_sender_started ON messages(sender_phone, send_started_at);
+  `,
 ]
 
 function migrate() {

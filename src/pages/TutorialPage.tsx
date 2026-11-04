@@ -12,15 +12,15 @@ const steps: { title: string; summary: string; details: string[]; target?: Desti
     icon: UserRound,
   },
   {
-    title: 'Vincula el WhatsApp de Cristina',
-    summary: 'La app genera un QR para enlazar el número que enviará los mensajes.',
-    details: ['Abre WhatsApp en el teléfono y entra a Dispositivos vinculados > Vincular dispositivo.', 'Escanea el QR que aparece en la sección WhatsApp y espera el estado “Conectado”.'],
+    title: 'Vincula los números de WhatsApp',
+    summary: 'Puedes conectar varios números, cada uno con su propio QR.',
+    details: ['En WhatsApp, selecciona un número o pulsa Agregar WhatsApp y después Conectar WhatsApp.', 'En cada teléfono, entra a Dispositivos vinculados > Vincular dispositivo y escanea su QR.'],
     target: 'whatsapp', action: 'Ir a WhatsApp', icon: MessageCircle,
   },
   {
     title: 'Importa la base de prospectos',
     summary: 'Carga un archivo Excel o CSV con una fila por persona.',
-    details: ['Incluye DNI de 8 dígitos, nombre y número de celular. Monto y tasa son opcionales.', 'Incluye una columna de autorización de WhatsApp y marca “Sí” solo para quienes aceptaron recibir mensajes.', 'Los contactos sin autorización quedan en espera y no entran en la cola de envío.'],
+    details: ['Incluye DNI de 8 dígitos, nombre y número de celular. Monto y tasa son opcionales.', 'Puedes registrar la autorización de todos los contactos nuevos del archivo al importar.', 'Para identificar contactos antiguos, vuelve a subir su archivo y selecciona Asociar contactos existentes sin base.'],
     target: 'import', action: 'Ir a Importar', icon: FileSpreadsheet,
   },
   {
@@ -32,13 +32,13 @@ const steps: { title: string; summary: string; details: string[]; target?: Desti
   {
     title: 'Configura el mensaje y el ritmo',
     summary: 'Una plantilla común conserva la misma estructura para todos los clientes.',
-    details: ['Personaliza el texto con [nombre], [monto] y [tasa]; cada dato se toma del prospecto.', 'La pausa predeterminada es 30 segundos entre mensajes. También puedes definir horario y límite diario.', 'Deja visible cómo pedir que no vuelvan a escribir; una respuesta “BAJA” detiene futuros envíos a ese contacto.'],
+    details: ['Personaliza el texto con [nombre], [monto] y [tasa]; [nombre] usa un nombre y un apellido.', 'La pausa predeterminada es 30 segundos. Puedes definir horario y límite diario por teléfono.', 'Una respuesta “BAJA” detiene futuros envíos a ese contacto.'],
     target: 'settings', action: 'Abrir Configuración', icon: Settings2,
   },
   {
     title: 'Inicia y supervisa los envíos',
     summary: 'La cola procesa prospectos autorizados uno por uno.',
-    details: ['Abre Envíos y pulsa Iniciar cuando WhatsApp esté conectado y la lista revisada.', 'Puedes pausar, reanudar o detener la cola. Revisa el avance y atiende los registros con error.', 'El sistema puede registrar respuestas entrantes; Cristina gestiona la conversación con cada persona.'],
+    details: ['En Envíos puedes iniciar ahora o programar una fecha y hora.', 'Activa Mezclar bases para alternar entre archivos; BuyBot también alterna los números conectados.', 'Consulta en Inicio el número de contactados por base y revisa los envíos con error.'],
     target: 'send', action: 'Ir a Envíos', icon: Send,
   },
   {

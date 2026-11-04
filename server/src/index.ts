@@ -8,7 +8,7 @@ import { autoBackup, db } from './db.js'
 import { bootstrapAdmin } from './auth.js'
 import { registerRoutes } from './routes.js'
 import { queue } from './queue.js'
-import { whatsapp } from './whatsapp.js'
+import { whatsapps } from './whatsapp.js'
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, trustProxy: true, bodyLimit: 8 * 1024 * 1024 })
 await app.register(cookie)
@@ -31,8 +31,8 @@ queue.init()
 autoBackup()
 const backupTimer = setInterval(() => { try { autoBackup() } catch (e) { app.log.error(e) } }, 6 * 3600_000)
 // Mantiene vigente el estado de WhatsApp aunque nadie tenga la pantalla abierta (reconexión automática).
-const waTimer = setInterval(() => void whatsapp.refresh(), 10_000)
-void whatsapp.refresh(true)
+const waTimer = setInterval(() => void whatsapps.refreshAll(), 10_000)
+void whatsapps.refreshAll(true)
 
 const shutdown = async () => {
   clearInterval(backupTimer); clearInterval(waTimer); queue.shutdown()

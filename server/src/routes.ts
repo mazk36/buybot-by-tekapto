@@ -5,16 +5,17 @@ import { COOKIE, createSession, destroyOtherSessions, destroySession, hashPasswo
 import { audit, copyForDownload, db, getRaw, getSettings, nowIso, setRaw, tx, webhookSecret, DEFAULT_TEMPLATE } from './db.js'
 import { config } from './config.js'
 import { queue } from './queue.js'
-import { whatsapp } from './whatsapp.js'
-import { evolution } from './evolution.js'
-import { isValidDni, normalizePhone, parseNumber, renderMessage, startOfLocalDay, titleCase } from './util.js'
+import { whatsapp, whatsapps } from './whatsapp.js'
+import { EvolutionError, evolution } from './evolution.js'
+import { accountViews, sentByAccount } from './senders.js'
+import { isValidDni, messageName as formatMessageName, normalizePhone, parseNumber, renderMessage, startOfLocalDay, titleCase } from './util.js'
 
 const STATUSES = ['pending', 'sending', 'sent', 'failed', 'no_whatsapp', 'opted_out', 'on_hold'] as const
 type Status = (typeof STATUSES)[number]
 const actor = (request: FastifyRequest) => request.user?.email ?? 'sistema'
 
 const toProspect = (r: any) => ({
-  id: r.id, dni: r.dni, name: r.name, phone: r.phone, offerAmount: r.offer_amount, rate: r.rate, notes: r.notes,
+  id: r.id, dni: r.dni, name: r.name, messageName: r.message_name, phone: r.phone, offerAmount: r.offer_amount, rate: r.rate, notes: r.notes,
   whatsappOptIn: r.whatsapp_opt_in === 1,
   status: r.status as Status, attempts: r.attempts, lastError: r.last_error, sentAt: r.sent_at,
   repliedAt: r.replied_at, replyText: r.reply_text, createdAt: r.created_at, updatedAt: r.updated_at,
@@ -24,7 +25,7 @@ class HttpError extends Error { constructor(readonly status: number, message: st
 const bad = (message: string) => new HttpError(400, message)
 
 function parseProspectInput(body: any, partial: boolean) {
-  const out: { dni?: string; name?: string; phone?: string; offerAmount?: number | null; rate?: number | null; notes?: string; whatsappOptIn?: boolean } = {}
+  const out: { dni?: string; name?: string; messageName?: string | null; phone?: string; offerAmount?: number | null; rate?: number | null; notes?: string; whatsappOptIn?: boolean } = {}
   if (!partial || body.dni !== undefined) {
     const dni = String(body.dni ?? '').trim()
     if (!isValidDni(dni)) throw bad('El DNI debe tener 8 dígitos.')
@@ -34,6 +35,12 @@ function parseProspectInput(body: any, partial: boolean) {
     const name = String(body.name ?? '').trim().replace(/\s+/g, ' ')
     if (name.length < 2 || name.length > 120) throw bad('Escribe el nombre del cliente.')
     out.name = titleCase(name)
+  }
+  if (body.messageName !== undefined) {
+    if (body.messageName !== null && typeof body.messageName !== 'string') throw bad('El nombre para mensajes no es válido.')
+    const name = String(body.messageName ?? '').trim().replace(/\s+/g, ' ')
+    if (name.length > 120) throw bad('El nombre para mensajes es demasiado largo.')
+    out.messageName = name ? formatMessageName(name) : null
   }
   if (!partial || body.phone !== undefined) {
     const phone = normalizePhone(String(body.phone ?? ''))
@@ -122,7 +129,7 @@ export async function registerRoutes(app: FastifyInstance) {
     if (secret !== webhookSecret()) return reply.code(401).send({ error: 'No autorizado' })
     const body = request.body as any
     const event = String(body?.event ?? '').toLowerCase().replace(/_/g, '.')
-    if (event === 'connection.update' || event === 'qrcode.updated') whatsapp.poke()
+    if (event === 'connection.update' || event === 'qrcode.updated') whatsapps.poke(typeof body?.instance === 'string' ? body.instance : undefined)
     if (event === 'messages.upsert') {
       const items = Array.isArray(body.data) ? body.data : [body.data]
       for (const data of items) {
@@ -262,8 +269,51 @@ export async function registerRoutes(app: FastifyInstance) {
         sentToday: queue.sentToday(), dailyLimit: settings.dailyLimit,
         blocked: queue.countBlocked(),
         campaign: queue.snapshot(),
-        whatsapp: whatsapp.snapshot,
+        whatsapp: whatsapps.list().map((account) => whatsapps.get(account.id)!.snapshot).find((status) => status.state === 'connected') ?? whatsapp.snapshot,
       }
+    })
+
+    // Las importaciones antiguas y los registros manuales quedan en una base sin origen identificado.
+    api.get('/api/bases', async () => {
+      const items = db.prepare(`
+        SELECT p.import_batch_id AS id,
+          COALESCE(b.name, 'Sin base identificada') AS name,
+          COUNT(*) AS total,
+          SUM(CASE WHEN EXISTS (
+            SELECT 1 FROM messages m WHERE m.prospect_id = p.id
+              AND m.status IN ('sent', 'superseded') AND m.sent_at IS NOT NULL
+          ) OR p.sent_at IS NOT NULL THEN 1 ELSE 0 END) AS contacted,
+          SUM(CASE WHEN p.whatsapp_opt_in = 1 THEN 1 ELSE 0 END) AS consented,
+          SUM(CASE WHEN p.status = 'pending' AND p.whatsapp_opt_in = 1 THEN 1 ELSE 0 END) AS pending
+        FROM prospects p LEFT JOIN import_batches b ON b.id = p.import_batch_id
+        GROUP BY p.import_batch_id, b.name
+        ORDER BY p.import_batch_id IS NULL, b.name COLLATE NOCASE, p.import_batch_id
+      `).all()
+      return { items }
+    })
+
+    api.post('/api/bases/consent', async (request) => {
+      const body = (request.body ?? {}) as { baseId?: number | null; confirmed?: boolean }
+      if (body.confirmed !== true || !Object.hasOwn(body, 'baseId')) throw bad('Confirma la autorización de la base seleccionada.')
+      const baseId = body.baseId
+      if (baseId !== null && (!Number.isInteger(baseId) || Number(baseId) <= 0)) throw bad('Selecciona una base válida.')
+      const base = baseId === null
+        ? { name: 'Sin base identificada' }
+        : db.prepare('SELECT name FROM import_batches WHERE id = ?').get(baseId!) as { name: string } | undefined
+      if (!base) throw new HttpError(404, 'Base no encontrada.')
+      const counts = db.prepare(`SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status = 'opted_out' THEN 1 ELSE 0 END) AS opted_out
+        FROM prospects WHERE import_batch_id IS ?`).get(baseId!) as { total: number; opted_out: number | null }
+      if (!counts.total) throw new HttpError(404, 'La base no tiene prospectos.')
+      const affected = tx(() => {
+        const updated = Number(db.prepare(`UPDATE prospects SET whatsapp_opt_in = 1,
+          status = CASE WHEN status = 'on_hold' THEN 'pending' ELSE status END, updated_at = ?
+          WHERE import_batch_id IS ? AND whatsapp_opt_in = 0 AND status != 'opted_out'`).run(nowIso(), baseId!).changes)
+        audit(actor(request), 'prospects.bulk_consent', 'import_batch', baseId!, base.name,
+          { confirmed: true, affected: updated, excludedOptedOut: counts.opted_out ?? 0 })
+        return updated
+      })
+      return { affected, excludedOptedOut: counts.opted_out ?? 0 }
     })
 
     // ----- Prospectos -----
@@ -300,8 +350,8 @@ export async function registerRoutes(app: FastifyInstance) {
       const data = parseProspectInput(request.body as any, false)
       try {
         const initialStatus = data.whatsappOptIn ? 'pending' : 'on_hold'
-        const res = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes,whatsapp_opt_in,status) VALUES(?,?,?,?,?,?,?,?)')
-          .run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', data.whatsappOptIn ? 1 : 0, initialStatus)
+        const res = db.prepare('INSERT INTO prospects(dni,name,message_name,phone,offer_amount,rate,notes,whatsapp_opt_in,status) VALUES(?,?,?,?,?,?,?,?,?)')
+          .run(data.dni!, data.name!, data.messageName ?? null, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', data.whatsappOptIn ? 1 : 0, initialStatus)
         audit(actor(request), 'prospect.create', 'prospect', Number(res.lastInsertRowid), data.name!, data)
         const row = db.prepare('SELECT * FROM prospects WHERE id = ?').get(Number(res.lastInsertRowid))
         return reply.code(201).send({ prospect: toProspect(row) })
@@ -333,6 +383,7 @@ export async function registerRoutes(app: FastifyInstance) {
       if (current.status === 'sending') throw new HttpError(409, 'El mensaje se está enviando en este momento.')
       const next = { ...current, ...{
         dni: data.dni ?? current.dni, name: data.name ?? current.name, phone: data.phone ?? current.phone,
+        message_name: data.messageName !== undefined ? data.messageName : current.message_name,
         offer_amount: data.offerAmount !== undefined ? data.offerAmount : current.offer_amount,
         rate: data.rate !== undefined ? data.rate : current.rate, notes: data.notes ?? current.notes,
         whatsapp_opt_in: data.whatsappOptIn !== undefined ? (data.whatsappOptIn ? 1 : 0) : current.whatsapp_opt_in,
@@ -343,15 +394,15 @@ export async function registerRoutes(app: FastifyInstance) {
       // Si un envío falló por número inválido y se corrige el teléfono, vuelve a pendiente.
       if (data.phone !== undefined && data.phone !== current.phone && ['failed', 'no_whatsapp'].includes(current.status) && next.whatsapp_opt_in === 1) { next.status = 'pending'; next.attempts = 0; next.last_error = null }
       try {
-        db.prepare('UPDATE prospects SET dni=?, name=?, phone=?, offer_amount=?, rate=?, notes=?, whatsapp_opt_in=?, status=?, attempts=?, last_error=?, updated_at=? WHERE id=?')
-          .run(next.dni, next.name, next.phone, next.offer_amount, next.rate, next.notes, next.whatsapp_opt_in, next.status, next.attempts, next.last_error, nowIso(), id)
+        db.prepare('UPDATE prospects SET dni=?, name=?, message_name=?, phone=?, offer_amount=?, rate=?, notes=?, whatsapp_opt_in=?, status=?, attempts=?, last_error=?, updated_at=? WHERE id=?')
+          .run(next.dni, next.name, next.message_name, next.phone, next.offer_amount, next.rate, next.notes, next.whatsapp_opt_in, next.status, next.attempts, next.last_error, nowIso(), id)
       } catch (error) {
         const msg = uniqueConflict(error)
         if (msg) throw new HttpError(409, msg)
         throw error
       }
       const changes: Record<string, [unknown, unknown]> = {}
-      for (const k of ['dni', 'name', 'phone', 'offer_amount', 'rate', 'notes', 'whatsapp_opt_in', 'status'] as const) if (current[k] !== next[k]) changes[k] = [current[k], next[k]]
+      for (const k of ['dni', 'name', 'message_name', 'phone', 'offer_amount', 'rate', 'notes', 'whatsapp_opt_in', 'status'] as const) if (current[k] !== next[k]) changes[k] = [current[k], next[k]]
       if (Object.keys(changes).length) audit(actor(request), 'prospect.update', 'prospect', id, next.name, changes)
       return { prospect: toProspect(db.prepare('SELECT * FROM prospects WHERE id = ?').get(id)) }
     })
@@ -401,48 +452,121 @@ export async function registerRoutes(app: FastifyInstance) {
     })
 
     api.post('/api/prospects/import', async (request) => {
-      const { rows } = request.body as { rows: any[] }
+      const { rows, sourceName, consentAll, assignExisting } = request.body as { rows: any[]; sourceName?: string; consentAll?: boolean; assignExisting?: boolean }
       if (!Array.isArray(rows) || !rows.length) throw bad('El archivo no tiene filas.')
       if (rows.length > 20000) throw bad('Máximo 20 000 filas por importación.')
+      if (consentAll !== undefined && typeof consentAll !== 'boolean') throw bad('La confirmación de autorización no es válida.')
+      if (assignExisting !== undefined && typeof assignExisting !== 'boolean') throw bad('La opción para asociar contactos existentes no es válida.')
+      const batchName = String(sourceName ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 180) || 'Importación sin nombre'
       const invalid: { row: number; reason: string }[] = []
       const duplicates: { row: number; reason: string }[] = []
       let created = 0
       let onHold = 0
+      let reassigned = 0
       tx(() => {
-        const insert = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes,whatsapp_opt_in,status) VALUES(?,?,?,?,?,?,?,?)')
+        const batchId = Number(db.prepare('INSERT INTO import_batches(name) VALUES(?)').run(batchName).lastInsertRowid)
+        const insert = db.prepare('INSERT INTO prospects(dni,name,phone,offer_amount,rate,notes,whatsapp_opt_in,status,import_batch_id,message_name) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        const findExisting = db.prepare('SELECT id, import_batch_id FROM prospects WHERE dni = ? AND phone = ?')
+        const assignBase = db.prepare('UPDATE prospects SET import_batch_id = ? WHERE id = ? AND import_batch_id IS NULL')
         rows.forEach((raw, index) => {
           try {
+            if (assignExisting === true) {
+              const dni = String(raw?.dni ?? '').trim()
+              const phone = normalizePhone(String(raw?.phone ?? ''))
+              const existing = isValidDni(dni) && phone ? findExisting.get(dni, phone) as { id: number; import_batch_id: number | null } | undefined : undefined
+              if (existing && existing.import_batch_id === null) {
+                reassigned += Number(assignBase.run(batchId, existing.id).changes)
+                return
+              }
+            }
             const data = parseProspectInput(raw, false)
-            const initialStatus = data.whatsappOptIn ? 'pending' : 'on_hold'
-            insert.run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', data.whatsappOptIn ? 1 : 0, initialStatus)
+            const optedIn = consentAll === true || data.whatsappOptIn === true
+            const initialStatus = optedIn ? 'pending' : 'on_hold'
+            insert.run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', optedIn ? 1 : 0, initialStatus, batchId, data.messageName ?? null)
             created++
-            if (!data.whatsappOptIn) onHold++
+            if (!optedIn) onHold++
           } catch (error) {
             const dup = uniqueConflict(error)
             if (dup) duplicates.push({ row: index + 2, reason: dup })
             else invalid.push({ row: index + 2, reason: error instanceof HttpError ? error.message : 'Fila no válida.' })
           }
         })
+        if (!created && !reassigned) db.prepare('DELETE FROM import_batches WHERE id = ?').run(batchId)
       })
-      audit(actor(request), 'prospects.import', 'prospect', null, `${created} nuevos`, { created, onHold, duplicates: duplicates.length, invalid: invalid.length })
-      return { created, onHold, duplicates: duplicates.length, invalid: invalid.length, duplicateRows: duplicates.slice(0, 50), invalidRows: invalid.slice(0, 50) }
+      audit(actor(request), 'prospects.import', 'prospect', null, `${created} nuevos, ${reassigned} asociados`, { base: batchName, created, reassigned, onHold, assignExisting: assignExisting === true, confirmedConsentForNew: consentAll === true, duplicates: duplicates.length, invalid: invalid.length })
+      return { created, reassigned, onHold, duplicates: duplicates.length, invalid: invalid.length, duplicateRows: duplicates.slice(0, 50), invalidRows: invalid.slice(0, 50) }
     })
 
     // ----- Campaña -----
     api.get('/api/campaign', async () => queue.snapshot())
+    api.put('/api/campaign/mix', async (request) => {
+      const { enabled } = (request.body ?? {}) as { enabled?: unknown }
+      if (typeof enabled !== 'boolean') throw bad('Selecciona si deseas mezclar las bases.')
+      queue.setMix(enabled, actor(request))
+      return queue.snapshot()
+    })
     api.post('/api/campaign/:action', async (request) => {
       const action = (request.params as any).action
       const who = actor(request)
       if (action === 'start') {
         const result = queue.start(who)
         if (!result.ok) throw new HttpError(409, result.error)
-      } else if (action === 'pause') queue.pause(who)
+      } else if (action === 'schedule') {
+        const result = queue.schedule(who, (request.body as any)?.at)
+        if (!result.ok) throw new HttpError(400, result.error)
+      } else if (action === 'cancel-schedule') queue.cancelSchedule(who)
+      else if (action === 'pause') queue.pause(who)
       else if (action === 'stop') queue.stop(who)
       else throw new HttpError(404, 'Acción no válida.')
       return queue.snapshot()
     })
 
     // ----- WhatsApp -----
+    api.get('/api/whatsapp/accounts', async () => ({ accounts: await accountViews() }))
+    api.post('/api/whatsapp/accounts', async (request) => {
+      const label = String((request.body as any)?.label ?? '').trim().replace(/\s+/g, ' ')
+      if (label.length < 1 || label.length > 60) throw bad('Escribe un nombre de hasta 60 caracteres.')
+      return whatsapps.create(label, actor(request))
+    })
+
+    const sendTest = async (request: FastifyRequest, id: string) => {
+      const service = whatsapps.get(id)
+      if (!service) throw new HttpError(404, 'Número de WhatsApp no encontrado.')
+      const phone = normalizePhone(String((request.body as any)?.phone ?? ''))
+      if (!phone) throw bad('Escribe un celular válido de 9 dígitos.')
+      const status = await service.refresh(true)
+      if (status.state !== 'connected') throw new HttpError(409, 'Conecta WhatsApp antes de enviar una prueba.')
+      if (!status.phone || phone !== status.phone) throw new HttpError(403, 'El mensaje de prueba solo se puede enviar al mismo número conectado.')
+      const body = `[PRUEBA] ${renderMessage(getSettings().messageTemplate, { name: 'Cliente Prueba', offer_amount: 25000, rate: 11.9 })}`
+      const messageId = tx(() => {
+        if (sentByAccount(id, status.phone) >= getSettings().dailyLimit) throw new HttpError(409, 'Este número alcanzó su límite diario.')
+        const result = db.prepare(`INSERT INTO messages(prospect_id,name,phone,body,status,sender_instance,sender_phone,send_started_at) VALUES(NULL,?,?,?,'sending',?,?,?)`)
+          .run('Mensaje de prueba', phone, body, id, status.phone, nowIso())
+        return Number(result.lastInsertRowid)
+      })
+      try {
+        const remoteId = await evolution.sendText(id, phone, body, 0)
+        db.prepare(`UPDATE messages SET status = 'sent', sent_at = ?, remote_id = ? WHERE id = ?`).run(nowIso(), remoteId, messageId)
+        audit(actor(request), 'whatsapp.test', 'whatsapp', id, 'Mensaje de prueba', phone)
+      } catch (error) {
+        const rejected = error instanceof EvolutionError && error.kind === 'http' && error.status < 500
+        db.prepare(`UPDATE messages SET status = ?, error = ? WHERE id = ?`).run(rejected ? 'failed' : 'unknown', rejected ? 'Evolution rechazó la prueba.' : 'No se confirmó el envío; revisa WhatsApp.', messageId)
+        throw new HttpError(502, rejected ? 'Evolution rechazó la prueba.' : 'No se confirmó la prueba; revisa WhatsApp antes de repetirla.')
+      }
+      return { ok: true }
+    }
+
+    api.post('/api/whatsapp/accounts/:id/:action', async (request) => {
+      const { id, action } = request.params as { id: string; action: string }
+      const service = whatsapps.get(id)
+      if (!service) throw new HttpError(404, 'Número de WhatsApp no encontrado.')
+      if (action === 'connect') return service.connect(actor(request))
+      if (action === 'disconnect') return service.disconnect(actor(request))
+      if (action === 'reset') return service.reset(actor(request))
+      if (action === 'test') return sendTest(request, id)
+      throw new HttpError(404, 'Acción no válida.')
+    })
+
     api.get('/api/whatsapp/status', async () => whatsapp.refresh())
     api.post('/api/whatsapp/connect', async (request) => whatsapp.connect(actor(request)))
     api.post('/api/whatsapp/disconnect', async (request) => {
@@ -453,17 +577,7 @@ export async function registerRoutes(app: FastifyInstance) {
       if (queue.status === 'running') queue.pause(actor(request))
       return whatsapp.reset(actor(request))
     })
-    api.post('/api/whatsapp/test', async (request) => {
-      const phone = normalizePhone(String((request.body as any)?.phone ?? ''))
-      if (!phone) throw bad('Escribe un celular válido de 9 dígitos.')
-      const status = await whatsapp.refresh(true)
-      if (status.state !== 'connected') throw new HttpError(409, 'Conecta WhatsApp antes de enviar una prueba.')
-      if (!status.phone || phone !== status.phone) throw new HttpError(403, 'El mensaje de prueba solo se puede enviar al mismo número conectado.')
-      const body = renderMessage(getSettings().messageTemplate, { name: 'Cliente de prueba', offer_amount: 25000, rate: 11.9 })
-      await evolution.sendText(config.instanceName, phone, `[PRUEBA] ${body}`, 0)
-      audit(actor(request), 'whatsapp.test', 'whatsapp', null, 'Mensaje de prueba', phone)
-      return { ok: true }
-    })
+    api.post('/api/whatsapp/test', async (request) => sendTest(request, config.instanceName))
 
     // ----- Configuración -----
     api.get('/api/settings', async () => ({ ...getSettings(), defaultTemplate: DEFAULT_TEMPLATE, evolutionConfigured: Boolean(config.evolutionUrl && config.evolutionKey) }))

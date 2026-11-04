@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Clock3, MessageSquareText, Pause, Play, Square, WifiOff } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Clock3, MessageSquareText, Pause, Play, Shuffle, Square, WifiOff } from 'lucide-react'
 import { api } from '../api'
 import type { CampaignReason } from '../api'
 import { Button, Empty, PageHeader, StatusBadge, useToast } from '../ui'
 import { useStats } from '../store'
-import { formatPhone, formatTime, initials } from '../format'
+import { formatDateTime, formatPhone, formatTime, initials } from '../format'
 
 export const REASON_TEXT: Record<Exclude<CampaignReason, null>, string> = {
   whatsapp_disconnected: 'Esperando que WhatsApp esté conectado',
@@ -20,7 +20,9 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
   const toast = useToast()
   const { stats, refresh } = useStats()
   const [busy, setBusy] = useState(false)
+  const [mixing, setMixing] = useState(false)
   const [now, setNow] = useState(Date.now())
+  const [scheduledInput, setScheduledInput] = useState('')
   const [recent, setRecent] = useState<{ id: number; name: string; phone: string; sentAt: string }[]>([])
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t) }, [])
   useEffect(() => { api<{ items: typeof recent }>('GET', '/messages/today').then((r) => setRecent(r.items)).catch(() => {}) }, [stats?.sentToday])
@@ -29,13 +31,41 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
   const c = stats.campaign
   const wa = stats.whatsapp
   const pending = stats.counts.pending
-  const progress = Math.min(100, (stats.sentToday / stats.dailyLimit) * 100)
   const countdown = c.nextAt ? Math.max(0, Math.round((new Date(c.nextAt).getTime() - now) / 1000)) : null
   const label = c.status === 'running' ? 'En curso' : c.status === 'paused' ? 'En pausa' : 'Detenido'
 
   const act = async (action: 'start' | 'pause' | 'stop') => {
     setBusy(true)
     try { await api('POST', `/campaign/${action}`); await refresh() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') } finally { setBusy(false) }
+  }
+
+  const toggleMix = async () => {
+    setMixing(true)
+    try {
+      await api('PUT', '/campaign/mix', { enabled: !c.mixBases })
+      await refresh()
+      toast(c.mixBases ? 'Mezcla de bases desactivada.' : 'Mezcla de bases activada.')
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo cambiar la mezcla.', 'error') } finally { setMixing(false) }
+  }
+
+  const schedule = async () => {
+    const date = new Date(scheduledInput)
+    if (!scheduledInput || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
+      toast('Elige una fecha y hora futuras.', 'error'); return
+    }
+    setBusy(true)
+    try {
+      await api('POST', '/campaign/schedule', { at: date.toISOString() })
+      setScheduledInput('')
+      await refresh()
+      toast('Inicio programado.')
+    } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') } finally { setBusy(false) }
+  }
+
+  const cancelSchedule = async () => {
+    setBusy(true)
+    try { await api('POST', '/campaign/cancel-schedule'); await refresh(); toast('Programación cancelada.') }
     catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') } finally { setBusy(false) }
   }
 
@@ -50,7 +80,7 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
 
     <section className="card send-hero">
       <div className="send-top">
-        <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>/ {stats.dailyLimit}</span></div></div>
+        <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>entre todos los números</span></div><p className="muted-text small">Límite: {stats.dailyLimit} intentos diarios por número.</p></div>
         <div className="send-controls">
           {c.status === 'running'
             ? <Button busy={busy} icon={<Pause size={16} />} onClick={() => void act('pause')}>Pausar</Button>
@@ -58,13 +88,27 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
           <Button busy={busy} disabled={c.status === 'stopped'} icon={<Square size={14} />} onClick={() => void act('stop')}>Detener</Button>
         </div>
       </div>
-      <div className="progress" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Avance diario"><i style={{ width: `${progress}%` }} /></div>
       <div className="send-meta">
         <span><b>{pending}</b> pendientes en cola</span>
         {c.status === 'running' && countdown !== null && countdown > 0 && <span>Siguiente mensaje en <b>{countdown} s</b></span>}
         {c.status === 'running' && countdown === 0 && !c.reason && <span>Enviando…</span>}
       </div>
+      <div className="mix-control">
+        <div><strong>Mezclar bases</strong><p className="muted-text small">Alterna entre los archivos con prospectos pendientes.</p></div>
+        <Button icon={<Shuffle size={16} />} busy={mixing} aria-pressed={c.mixBases} onClick={() => void toggleMix()}>{c.mixBases ? 'Mezcla activada' : 'Activar mezcla'}</Button>
+      </div>
       {pending === 0 && c.status !== 'running' && <Empty icon={<MessageSquareText size={22} />} title="No hay clientes pendientes" text="Importa una base o libera clientes en espera para empezar." action={<Button onClick={() => goto('prospects')}>Ir a prospectos</Button>} />}
+    </section>
+
+    <section className="card">
+      <h3 className="card-title">Programar inicio</h3>
+      <p className="muted-text small">El envío comenzará una vez, a la fecha y hora elegidas, respetando el horario y los límites configurados. Si el servidor está apagado a esa hora, comenzará cuando vuelva a estar disponible.</p>
+      {c.scheduledAt && <div className="alert alert-info"><CalendarClock size={18} /><div><strong>Inicio programado: {formatDateTime(c.scheduledAt)}</strong><p>Hora de este dispositivo. Si WhatsApp está desconectado, el envío esperará la conexión.</p></div><Button busy={busy} onClick={() => void cancelSchedule()}>Cancelar programación</Button></div>}
+      {c.scheduleError && <div className="alert alert-warn"><AlertTriangle size={18} /><div><strong>No se pudo iniciar el envío programado</strong><p>{c.scheduleError}</p></div></div>}
+      <div className="form-grid">
+        <div className="field"><label htmlFor="scheduled-start">Fecha y hora (hora de este dispositivo)</label><input id="scheduled-start" type="datetime-local" value={scheduledInput} onChange={(e) => setScheduledInput(e.target.value)} disabled={c.status === 'running'} /></div>
+      </div>
+      <div className="btn-row"><Button icon={<CalendarClock size={16} />} busy={busy} disabled={c.status === 'running'} onClick={() => void schedule()}>{c.scheduledAt ? 'Cambiar programación' : 'Programar inicio'}</Button></div>
     </section>
 
     <div className="grid-2">

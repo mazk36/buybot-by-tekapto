@@ -15,6 +15,17 @@ export function titleCase(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase())
 }
 
+// Si solo se dispone de un nombre completo, usa el primer nombre y el último
+// apellido, manteniendo las partículas de apellidos como "de la Cruz".
+export function messageName(name: string): string {
+  const words = titleCase(name).split(' ').filter(Boolean)
+  if (words.length < 2) return words[0] ?? ''
+  const particles = new Set(['de', 'del', 'la', 'las', 'los', 'da', 'do', 'dos', 'van', 'von', 'der'])
+  let start = words.length - 1
+  while (start > 1 && particles.has(words[start - 1].toLowerCase())) start--
+  return [words[0], ...words.slice(start)].join(' ')
+}
+
 export function parseNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const text = String(value).replace(/[^\d.,-]/g, '')
@@ -38,7 +49,7 @@ export function requiredVars(template: string): Set<string> {
   return found
 }
 
-export interface Renderable { name: string; offer_amount: number | null; rate: number | null }
+export interface Renderable { name: string; message_name?: string | null; offer_amount: number | null; rate: number | null }
 
 /** Devuelve las variables que la plantilla necesita y el prospecto no tiene. */
 export function missingVars(template: string, p: Renderable): string[] {
@@ -51,7 +62,7 @@ export function missingVars(template: string, p: Renderable): string[] {
 
 export function renderMessage(template: string, p: Renderable): string {
   return template
-    .replace(/\[nombre\]/gi, titleCase(p.name))
+    .replace(/\[nombre\]/gi, messageName(p.message_name || p.name))
     .replace(/\[monto\]/gi, p.offer_amount === null ? '' : money.format(p.offer_amount))
     .replace(/\[tasa\]/gi, p.rate === null ? '' : `${p.rate.toFixed(2)} %`)
 }

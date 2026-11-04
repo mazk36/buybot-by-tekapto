@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDownToLine, ChevronLeft, ChevronRight, MessageCircle, Pause, Pencil, Play, Plus, RotateCcw, Search, Trash2, Users } from 'lucide-react'
 import { ApiError, api, qs } from '../api'
-import type { Paged, Prospect, Status } from '../api'
+import type { BaseSummary, Paged, Prospect, Status } from '../api'
 import { Button, ConfirmDialog, Empty, ErrorBox, Field, Modal, PageHeader, STATUS_LABEL, Spinner, StatusBadge, useDebounced, useToast } from '../ui'
 import { useStats } from '../store'
 import { downloadUrl, formatDateTime, formatMoney, formatPhone, formatRate, initials } from '../format'
@@ -24,6 +24,10 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<Prospect | 'new' | null>(null)
   const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bases, setBases] = useState<BaseSummary[]>([])
+  const [baseChoice, setBaseChoice] = useState('')
+  const [confirmConsent, setConfirmConsent] = useState(false)
+  const [consentBusy, setConsentBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +37,11 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
   }, [filter, q, page, sort])
 
   useEffect(() => { void load() }, [load, stats?.total, stats?.counts.sent])
+  const loadBases = useCallback(async () => {
+    try { setBases((await api<{ items: BaseSummary[] }>('GET', '/bases')).items) }
+    catch { setBases([]) }
+  }, [])
+  useEffect(() => { void loadBases() }, [loadBases, stats?.total, stats?.counts.on_hold, stats?.counts.opted_out])
   useEffect(() => { setPage(1); setSelected(new Set()) }, [filter, q])
   // Refresco suave para ver el avance de envíos en vivo.
   useEffect(() => { const t = window.setInterval(() => { if (document.visibilityState === 'visible' && !editing) void load() }, 5000); return () => window.clearInterval(t) }, [load, editing])
@@ -54,6 +63,18 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
   const counts = stats?.counts
   const countFor = (id: Status | 'all') => id === 'all' ? stats?.total : counts?.[id]
   const sortMark = (key: string) => sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+  const selectedBase = bases.find((base) => (base.id === null ? 'unassigned' : String(base.id)) === baseChoice)
+
+  const confirmBaseConsent = async () => {
+    if (!selectedBase) return
+    setConsentBusy(true)
+    try {
+      const res = await api<{ affected: number; excludedOptedOut: number }>('POST', '/bases/consent', { baseId: selectedBase.id, confirmed: true })
+      toast(`${res.affected} autorización(es) registradas${res.excludedOptedOut ? ` · ${res.excludedOptedOut} con baja respetada` : ''}`)
+      setConfirmConsent(false); void loadBases(); void load(); void refresh()
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo registrar la autorización', 'error') }
+    finally { setConsentBusy(false) }
+  }
 
   return <>
     <PageHeader eyebrow="BASE DE CLIENTES" title="Prospectos" subtitle="Agrega, edita y da seguimiento a cada cliente. Los ya contactados quedan protegidos."
@@ -62,6 +83,16 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
         <Button onClick={onImport}>Importar Excel</Button>
         <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditing('new')}>Nuevo prospecto</Button>
       </>} />
+
+    {bases.length > 0 && <section className="card">
+      <h3 className="card-title">Autorización por base</h3>
+      <p className="muted-text">Confirma una sola vez la autorización de los contactos de la base seleccionada.</p>
+      <Field label="Base de datos"><select className="select" aria-label="Base de datos" value={baseChoice} onChange={(e) => setBaseChoice(e.target.value)}>
+        <option value="">Selecciona una base</option>
+        {bases.map((base) => <option key={base.id ?? 'unassigned'} value={base.id === null ? 'unassigned' : String(base.id)}>{base.name} · {base.total} contactos</option>)}
+      </select></Field>
+      <Button disabled={!selectedBase} onClick={() => setConfirmConsent(true)}>Confirmar autorización de la base</Button>
+    </section>}
 
     <section className="card table-card">
       <div className="toolbar">
@@ -116,6 +147,9 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
     {bulkConfirm && <ConfirmDialog danger title={`¿Eliminar ${selected.size} prospecto(s)?`} confirmLabel="Eliminar"
       text="Los clientes ya contactados no se eliminan en bloque. Esta acción queda registrada en el historial." onCancel={() => setBulkConfirm(false)}
       onConfirm={async () => { await bulk('delete'); setBulkConfirm(false) }} />}
+    {confirmConsent && selectedBase && <ConfirmDialog title="¿Confirmar autorización de toda la base?" confirmLabel="Sí, confirmar"
+      text={<>Confirmas que los contactos de <b>{selectedBase.name}</b> aceptaron recibir mensajes por WhatsApp. Los contactos en espera por falta de autorización pasarán a pendientes. Se respetarán las solicitudes de baja.</>}
+      onCancel={() => { if (!consentBusy) setConfirmConsent(false) }} onConfirm={confirmBaseConsent} />}
   </>
 }
 
@@ -125,7 +159,7 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
   const toast = useToast()
   const locked = prospect?.status === 'sent' || prospect?.status === 'sending'
   const [form, setForm] = useState({
-    dni: prospect?.dni ?? '', name: prospect?.name ?? '', phone: prospect ? formatPhone(prospect.phone) : '',
+    dni: prospect?.dni ?? '', name: prospect?.name ?? '', messageName: prospect?.messageName ?? '', phone: prospect ? formatPhone(prospect.phone) : '',
     offerAmount: prospect?.offerAmount?.toString() ?? '', rate: prospect?.rate?.toString() ?? '', notes: prospect?.notes ?? '',
     whatsappOptIn: prospect?.whatsappOptIn ?? false,
   })
@@ -144,7 +178,7 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
   const save = async () => {
     setBusy(true); setError('')
     try {
-      const body = { dni: form.dni, name: form.name, phone: form.phone, offerAmount: form.offerAmount === '' ? null : form.offerAmount, rate: form.rate === '' ? null : form.rate, notes: form.notes, whatsappOptIn: form.whatsappOptIn }
+      const body = { dni: form.dni, name: form.name, messageName: form.messageName, phone: form.phone, offerAmount: form.offerAmount === '' ? null : form.offerAmount, rate: form.rate === '' ? null : form.rate, notes: form.notes, whatsappOptIn: form.whatsappOptIn }
       if (prospect) await api('PATCH', `/prospects/${prospect.id}`, body)
       else await api('POST', '/prospects', body)
       toast(prospect ? 'Cambios guardados' : 'Prospecto agregado')
@@ -177,6 +211,7 @@ function ProspectModal({ prospect, onClose, onSaved }: { prospect: Prospect | nu
       {prospect?.replyText && <div className="alert alert-info"><div><strong>Respuesta del cliente</strong><p>{prospect.replyText}</p></div></div>}
       <div className="form-grid">
         <Field label="Nombre completo"><input value={form.name} onChange={set('name')} autoComplete="off" /></Field>
+        <Field label="Nombre para mensajes" hint="Opcional: un nombre y un apellido. Si lo dejas vacío, se toma el primero y el último del nombre completo."><input value={form.messageName} onChange={set('messageName')} autoComplete="off" placeholder="Ej. Ana Pérez" /></Field>
         <Field label="DNI" hint="8 dígitos"><input value={form.dni} onChange={set('dni')} inputMode="numeric" maxLength={8} disabled={locked} /></Field>
         <Field label="WhatsApp" hint="Celular de 9 dígitos"><input value={form.phone} onChange={set('phone')} inputMode="tel" disabled={locked} /></Field>
         <Field label="Monto ofertado (S/)" hint="Opcional hasta enviar"><input value={form.offerAmount} onChange={set('offerAmount')} inputMode="decimal" placeholder="32500" /></Field>

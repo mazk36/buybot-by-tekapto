@@ -2,7 +2,7 @@ export type Status = 'pending' | 'sending' | 'sent' | 'failed' | 'no_whatsapp' |
 export type WaState = 'evolution_not_configured' | 'evolution_unreachable' | 'no_instance' | 'disconnected' | 'connecting' | 'connected'
 
 export interface Prospect {
-  id: number; dni: string; name: string; phone: string; offerAmount: number | null; rate: number | null; notes: string
+  id: number; dni: string; name: string; messageName: string | null; phone: string; offerAmount: number | null; rate: number | null; notes: string
   whatsappOptIn: boolean
   status: Status; attempts: number; lastError: string | null; sentAt: string | null; repliedAt: string | null; replyText: string | null
   createdAt: string; updatedAt: string
@@ -14,6 +14,8 @@ export interface WaStatus {
 export type CampaignReason = null | 'whatsapp_disconnected' | 'outside_window' | 'daily_limit' | 'finished' | 'missing_data' | 'waiting' | 'error'
 export interface Campaign {
   status: 'stopped' | 'running' | 'paused'; reason: CampaignReason; reasonText: string | null; nextAt: string | null; currentProspectId: number | null
+  scheduledAt: string | null; scheduleError: string | null
+  mixBases: boolean
 }
 export interface Stats {
   total: number; counts: Record<Status, number>; replied: number; sentToday: number; dailyLimit: number; blocked: number
@@ -23,6 +25,7 @@ export interface Settings {
   messageTemplate: string; dailyLimit: number; delayMin: number; delayMax: number; windowStart: string; windowEnd: string
   defaultTemplate: string; evolutionConfigured: boolean
 }
+export interface BaseSummary { id: number | null; name: string; total: number; contacted: number; consented: number; pending: number }
 export interface AuditEvent { id: number; ts: string; actor: string; action: string; entity: string; entity_id: string | null; label: string; detail: string }
 export interface User { id: number; email: string; name: string }
 export interface Paged<T> { items: T[]; total: number; page: number; pageSize: number }

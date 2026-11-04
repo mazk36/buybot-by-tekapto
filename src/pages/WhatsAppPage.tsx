@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, CloudOff, LoaderCircle, Plug, PlugZap, QrCode, RefreshCw, Send, Server, Smartphone, WifiOff } from 'lucide-react'
+import { CheckCircle2, CloudOff, LoaderCircle, Plug, PlugZap, Plus, QrCode, RefreshCw, Send, Server, Smartphone, WifiOff } from 'lucide-react'
 import { api } from '../api'
 import type { WaStatus } from '../api'
 import { Button, ConfirmDialog, Field, Modal, PageHeader, useToast, usePolling } from '../ui'
@@ -19,30 +19,47 @@ export function waLabel(state: WaStatus['state'] | undefined): { text: string; t
 
 export function WhatsAppPage() {
   const toast = useToast()
-  const { stats, refresh } = useStats()
-  const [wa, setWa] = useState<WaStatus | null>(stats?.whatsapp ?? null)
+  const { refresh } = useStats()
+  const [accounts, setAccounts] = useState<AccountView[]>([])
+  const [selectedId, setSelectedId] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<'disconnect' | 'reset' | null>(null)
   const [testOpen, setTestOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [, tick] = useState(0)
 
-  const load = async () => { try { setWa(await api<WaStatus>('GET', '/whatsapp/status')) } catch { /* el banner global lo muestra */ } }
+  const load = async () => {
+    try {
+      const result = await api<{ accounts: AccountView[] }>('GET', '/whatsapp/accounts')
+      setAccounts(result.accounts)
+      setSelectedId((current) => result.accounts.some((account) => account.id === current) ? current : result.accounts[0]?.id ?? '')
+    } catch { /* el banner global lo muestra */ }
+  }
   usePolling(() => void load(), 2000)
   useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 1000); return () => window.clearInterval(t) }, [])
 
-  const act = async (name: string, path: string, okMessage?: string) => {
+  const act = async (name: string, action: string, okMessage?: string) => {
+    if (!selectedId) return
     setBusy(name)
-    try { setWa(await api<WaStatus>('POST', path)); if (okMessage) toast(okMessage); void refresh() }
+    try { await api('POST', `/whatsapp/accounts/${encodeURIComponent(selectedId)}/${action}`); await load(); if (okMessage) toast(okMessage); void refresh() }
     catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') }
     finally { setBusy(null) }
   }
 
+  const wa = accounts.find((account) => account.id === selectedId)?.status ?? null
   const state = wa?.state
   const qrLeft = wa?.qrAgeSeconds != null ? Math.max(0, 24 - wa.qrAgeSeconds) : null
 
   return <>
-    <PageHeader eyebrow="CONEXIÓN" title="WhatsApp" subtitle="Vincula el número desde el que se enviarán los mensajes. El estado se actualiza solo." />
+    <PageHeader eyebrow="CONEXIÓN" title="WhatsApp" subtitle="Vincula uno o más números y administra cada conexión por separado."
+      actions={<Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>Agregar WhatsApp</Button>} />
     <div className="alert alert-warn">El QR usa Evolution API para vincular una sesión de WhatsApp Web de terceros. WhatsApp no la respalda y advierte que el uso de clientes no oficiales puede causar bloqueos. Para una operación estable, conviene migrar a la plataforma oficial de WhatsApp Business.</div>
+    <div className="wa-accounts" aria-label="Números de WhatsApp">
+      {accounts.map((account) => <button key={account.id} type="button" className={`wa-account ${selectedId === account.id ? 'active' : ''}`} aria-pressed={selectedId === account.id} onClick={() => setSelectedId(account.id)}>
+        <strong>{account.label}</strong><span>{account.status.phone ? `+${account.status.phone}` : waLabel(account.status.state).text}</span>
+        <small>{account.sentToday} / {account.dailyLimit} intentos hoy</small>
+      </button>)}
+    </div>
     <div className="wa-layout">
       <section className="card wa-main" aria-live="polite">
         {!wa && <div className="wa-state"><LoaderCircle className="spin" size={28} /><h2>Verificando conexión…</h2></div>}
@@ -62,9 +79,9 @@ export function WhatsAppPage() {
 
         {(state === 'no_instance' || state === 'disconnected') && <div className="wa-state">
           <span className="wa-icon tone-neutral"><WifiOff size={28} /></span>
-          <h2>No hay ningún número conectado</h2>
+          <h2>Este número no está conectado</h2>
           <p className="muted-text">Conecta el WhatsApp de la asesora escaneando un código QR desde el celular. Solo toma unos segundos.</p>
-          <Button variant="primary" icon={<QrCode size={17} />} busy={busy === 'connect'} onClick={() => void act('connect', '/whatsapp/connect')}>Conectar WhatsApp</Button>
+          <Button variant="primary" icon={<QrCode size={17} />} busy={busy === 'connect'} onClick={() => void act('connect', 'connect')}>Conectar WhatsApp</Button>
         </div>}
 
         {state === 'connecting' && <div className="wa-state">
@@ -76,7 +93,7 @@ export function WhatsAppPage() {
           <p className="muted-text small">{wa?.qr ? 'El código se renueva solo cada pocos segundos.' : 'Esto puede tardar unos segundos.'}</p>
           {wa?.pairingCode && <p className="pairing">O ingresa el código: <strong>{wa.pairingCode}</strong></p>}
           <div className="btn-row">
-            <Button onClick={() => void act('disconnect', '/whatsapp/disconnect')} busy={busy === 'disconnect'}>Cancelar</Button>
+            <Button onClick={() => void act('disconnect', 'disconnect')} busy={busy === 'disconnect'}>Cancelar</Button>
             <Button variant="ghost" icon={<RefreshCw size={16} />} onClick={() => setConfirm('reset')}>¿No aparece el QR?</Button>
           </div>
         </div>}
@@ -100,29 +117,48 @@ export function WhatsAppPage() {
           <li><PlugZap size={16} /><span>Toca <b>Dispositivos vinculados</b> (en Ajustes o menú ⋮).</span></li>
           <li><QrCode size={16} /><span>Elige <b>Vincular un dispositivo</b> y apunta al QR.</span></li>
         </ol>
-        <div className="note">Usa un número propio de la asesora y mantén el celular con internet. Evita enviar más de lo configurado por día para cuidar el número.</div>
+        <div className="note">BuyBot alterna los números conectados y aplica el límite diario a cada teléfono. Agregar números no garantiza evitar los límites o restricciones de WhatsApp.</div>
         {state === 'connected' && <Button variant="ghost" icon={<RefreshCw size={15} />} onClick={() => setConfirm('reset')}>Reiniciar conexión</Button>}
       </aside>
     </div>
 
     {confirm === 'disconnect' && <ConfirmDialog danger title="¿Desconectar WhatsApp?" confirmLabel="Desconectar"
       text="Se cerrará la sesión del número y el envío se pausará. Podrás volver a conectarlo con un nuevo QR."
-      onCancel={() => setConfirm(null)} onConfirm={async () => { await act('disconnect', '/whatsapp/disconnect', 'WhatsApp desconectado'); setConfirm(null) }} />}
+      onCancel={() => setConfirm(null)} onConfirm={async () => { await act('disconnect', 'disconnect', 'WhatsApp desconectado'); setConfirm(null) }} />}
     {confirm === 'reset' && <ConfirmDialog title="¿Reiniciar la conexión?" confirmLabel="Reiniciar"
       text="Se elimina la sesión actual en Evolution y se genera un QR nuevo. Úsalo si el QR no aparece o la conexión quedó trabada. El envío se pausará."
-      onCancel={() => setConfirm(null)} onConfirm={async () => { await act('reset', '/whatsapp/reset', 'Conexión reiniciada'); setConfirm(null) }} />}
-    {testOpen && <TestDialog onClose={() => setTestOpen(false)} />}
+      onCancel={() => setConfirm(null)} onConfirm={async () => { await act('reset', 'reset', 'Conexión reiniciada'); setConfirm(null) }} />}
+    {testOpen && <TestDialog accountId={selectedId} onClose={() => setTestOpen(false)} />}
+    {addOpen && <AddAccountDialog onClose={() => setAddOpen(false)} onAdded={async (id) => { setSelectedId(id); setAddOpen(false); await load(); void refresh() }} />}
   </>
 }
 
-function TestDialog({ onClose }: { onClose: () => void }) {
+interface AccountView { id: string; label: string; status: WaStatus; sentToday: number; dailyLimit: number }
+
+function AddAccountDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (id: string) => void }) {
+  const [label, setLabel] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const add = async () => {
+    setBusy(true); setError('')
+    try { const result = await api<{ id: string }>('POST', '/whatsapp/accounts', { label }); onAdded(result.id) }
+    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo agregar el número') }
+    finally { setBusy(false) }
+  }
+  return <Modal title="Agregar WhatsApp" onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" busy={busy} disabled={!label.trim()} onClick={() => void add()}>Agregar</Button></>}>
+    <p className="muted-text">Dale un nombre para reconocer este número. Después podrás vincularlo con su propio QR.</p>
+    <Field label="Nombre del número" error={error}><input value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)} placeholder="Ej. WhatsApp de Cristina" /></Field>
+  </Modal>
+}
+
+function TestDialog({ accountId, onClose }: { accountId: string; onClose: () => void }) {
   const toast = useToast()
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const send = async () => {
     setBusy(true); setError('')
-    try { await api('POST', '/whatsapp/test', { phone }); toast('Mensaje de prueba enviado'); onClose() }
+    try { await api('POST', `/whatsapp/accounts/${encodeURIComponent(accountId)}/test`, { phone }); toast('Mensaje de prueba enviado'); onClose() }
     catch (e) { setError(e instanceof Error ? e.message : 'No se pudo enviar') } finally { setBusy(false) }
   }
   return <Modal title="Mensaje de prueba" onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" busy={busy} onClick={() => void send()}>Enviar prueba</Button></>}>

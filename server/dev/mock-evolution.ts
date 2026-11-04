@@ -6,7 +6,7 @@ const KEY = process.env.MOCK_KEY ?? 'dev-key'
 const PORT = Number(process.env.MOCK_PORT ?? 8080)
 type Inst = { name: string; state: 'close' | 'connecting' | 'open'; qrCount: number; owner?: string }
 const instances = new Map<string, Inst>()
-const sent: { number: string; text: string; at: string }[] = []
+const sent: { instance: string; number: string; text: string; at: string }[] = []
 let failNext: 'none' | 'http' | 'hang' = 'none'
 
 // PNG 1x1 como QR de prueba (el frontend solo necesita una imagen base64).
@@ -26,7 +26,12 @@ createServer(async (req, res) => {
 
   // Controles del simulador
   if (parts[0] === '__mock') {
-    if (parts[1] === 'scan') { for (const i of instances.values()) if (i.state === 'connecting') { i.state = 'open'; i.owner = '51999000111@s.whatsapp.net' } return json(res, 200, { ok: true }) }
+    if (parts[1] === 'scan') {
+      const name = url.searchParams.get('name')
+      const phone = url.searchParams.get('phone') ?? '51999000111'
+      for (const i of instances.values()) if (i.state === 'connecting' && (!name || i.name === name)) { i.state = 'open'; i.owner = `${phone}@s.whatsapp.net` }
+      return json(res, 200, { ok: true })
+    }
     if (parts[1] === 'drop') { for (const i of instances.values()) i.state = 'close'; return json(res, 200, { ok: true }) }
     if (parts[1] === 'fail') { failNext = (url.searchParams.get('mode') as any) ?? 'http'; return json(res, 200, { ok: true }) }
     if (parts[1] === 'sent') return json(res, 200, sent)
@@ -65,7 +70,7 @@ createServer(async (req, res) => {
     if (inst.state !== 'open') return json(res, 400, { status: 400, response: { message: ['Connection Closed'] } })
     if (failNext === 'http') { failNext = 'none'; return json(res, 500, { status: 500, response: { message: ['Internal error'] } }) }
     if (failNext === 'hang') { failNext = 'none'; return } // nunca responde → timeout
-    sent.push({ number: body.number, text: body.text, at: new Date().toISOString() })
+    sent.push({ instance: inst.name, number: body.number, text: body.text, at: new Date().toISOString() })
     return json(res, 201, { key: { id: `MOCK${sent.length}` }, status: 'PENDING' })
   }
   return json(res, 404, { status: 404, error: 'Not Found', path: url.pathname })

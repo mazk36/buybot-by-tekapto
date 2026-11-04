@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, CheckCircle2, Clock3, MessageSquareText, TriangleAlert, Users, Wifi } from 'lucide-react'
 import { api } from '../api'
-import type { AuditEvent, Paged } from '../api'
+import type { AuditEvent, BaseSummary, Paged } from '../api'
 import { Button, Empty, PageHeader, Spinner } from '../ui'
 import { useStats, useUser } from '../store'
 import { formatTime, greeting } from '../format'
@@ -13,10 +13,12 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
   const { stats } = useStats()
   const { user } = useUser()
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
+  const [bases, setBases] = useState<BaseSummary[] | null>(null)
+  const [basesError, setBasesError] = useState(false)
   useEffect(() => { api<Paged<AuditEvent>>('GET', '/events?pageSize=6').then((r) => setEvents(r.items)).catch(() => setEvents([])) }, [stats?.sentToday, stats?.total])
+  useEffect(() => { api<{ items: BaseSummary[] }>('GET', '/bases').then((r) => { setBases(r.items); setBasesError(false) }).catch(() => setBasesError(true)) }, [stats?.sentToday, stats?.total, stats?.counts.sent, stats?.counts.opted_out, stats?.counts.pending, stats?.counts.on_hold])
   if (!stats) return <Spinner />
   const wa = waLabel(stats.whatsapp.state)
-  const progress = Math.min(100, (stats.sentToday / stats.dailyLimit) * 100)
   const review = stats.counts.failed + stats.counts.no_whatsapp
   const setupDone = [stats.whatsapp.state === 'connected', stats.total > 0, stats.sentToday > 0 || stats.counts.sent > 0]
 
@@ -33,8 +35,7 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
     </section>}
 
     <section className="card goal">
-      <div><span className="muted-label">META DE HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>/ {stats.dailyLimit} mensajes</span></div></div>
-      <div className="progress" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Avance diario"><i style={{ width: `${progress}%` }} /></div>
+      <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>mensajes entre todos los números</span></div><p className="muted-text small">Límite configurado: {stats.dailyLimit} intentos diarios por número.</p></div>
       <div className="goal-foot"><span className={`status-pill ${stats.campaign.status}`}><i />{stats.campaign.status === 'running' ? 'Envío en curso' : stats.campaign.status === 'paused' ? 'Envío en pausa' : 'Envío detenido'}</span><Button variant="ghost" onClick={() => goto('send')}>Ir a envíos <ArrowRight size={15} /></Button></div>
     </section>
 
@@ -43,6 +44,13 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
       <Kpi icon={<MessageSquareText size={18} />} label="Contactados" value={stats.counts.sent} detail={`${stats.replied} respondieron`} tone="green" onClick={() => goto('prospects')} />
       <Kpi icon={<TriangleAlert size={18} />} label="Por revisar" value={review} detail="Con error o sin WhatsApp" tone={review ? 'amber' : undefined} onClick={() => goto('review')} />
       <Kpi icon={<Wifi size={18} />} label="WhatsApp" value={wa.text} small detail={stats.whatsapp.phone ? `+${stats.whatsapp.phone}` : 'Toca para administrar'} tone={wa.tone} onClick={() => goto('whatsapp')} />
+    </section>
+
+    <section className="card">
+      <h3 className="card-title">Contactados por base</h3>
+      <p className="muted-text small">Seguimiento de los prospectos de cada archivo importado.</p>
+      {basesError ? <p className="error-text small">No se pudo cargar el resumen de las bases.</p> : !bases ? <Spinner /> : !bases.length ? <Empty icon={<Users size={22} />} title="Aún no hay bases" text="Importa un archivo para ver su avance aquí." /> :
+        <ul className="feed base-feed">{bases.map((base) => <li key={base.id ?? 'sin-base'}><div><strong>{base.name}</strong><small>{base.pending} pendientes con autorización</small></div><span className="base-count"><b>{base.contacted}</b> / {base.total} contactados</span></li>)}</ul>}
     </section>
 
     <section className="card">

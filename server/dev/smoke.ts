@@ -104,11 +104,11 @@ check('Sí se pueden editar notas', editNotes.status === 200 && editNotes.data.p
 const blocked = (await req('GET', '/api/prospects?status=pending')).data.items[0]
 await req('PATCH', `/api/prospects/${blocked.id}`, { offerAmount: 22000, rate: 12.2 })
 
-// Fallo HTTP → reintento
+// Un fallo 5xx puede ocultar un envío entregado: requiere revisión, sin reintento automático.
 await req('GET', '/__mock/fail?mode=http', undefined, MOCK)
 await req('POST', '/api/campaign/start')
-for (let i = 0; i < 60; i++) { await sleep(1000); stats = (await req('GET', '/api/stats')).data; if (stats.counts.sent === 3) break }
-check('Un fallo HTTP se reintenta y termina enviando', stats.counts.sent === 3, stats.counts)
+for (let i = 0; i < 30; i++) { await sleep(1000); stats = (await req('GET', '/api/stats')).data; if (stats.counts.failed === 1) break }
+check('Un error 5xx queda para revisión sin reenviar automáticamente', stats.counts.failed === 1 && stats.counts.sent === 2, stats.counts)
 
 // Webhook de opt-out
 const secret = process.env.WEBHOOK_SECRET

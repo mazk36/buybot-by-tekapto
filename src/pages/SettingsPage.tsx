@@ -34,7 +34,7 @@ export function SettingsPage({ dark, onToggleTheme }: { dark: boolean; onToggleT
     <div className="settings-grid">
       <section className="card">
         <h3 className="card-title">Mensaje</h3>
-        <Field label="Plantilla" hint="Variables: [nombre] [monto] [tasa]. Todos los contactos reciben la misma estructura del mensaje.">
+        <Field label="Plantilla" hint="Variables: [nombre] (un nombre y un apellido), [monto] y [tasa]. Puedes ajustar el nombre para mensajes en cada prospecto.">
           <textarea rows={8} value={form.messageTemplate} onChange={(e) => set('messageTemplate', e.target.value)} maxLength={1500} />
         </Field>
         <div className="btn-row"><Button variant="ghost" onClick={() => set('messageTemplate', saved.defaultTemplate)}>Restaurar predeterminada</Button></div>
@@ -44,14 +44,14 @@ export function SettingsPage({ dark, onToggleTheme }: { dark: boolean; onToggleT
       <section className="card">
         <h3 className="card-title">Ritmo de envío</h3>
         <div className="form-grid">
-          <Field label="Límite diario" hint="Mensajes por día"><input type="number" min={1} max={1000} value={form.dailyLimit || ''} onChange={num('dailyLimit')} /></Field>
+          <Field label="Límite diario por número" hint="Intentos de envío por teléfono y día"><input type="number" min={1} max={1000} value={form.dailyLimit || ''} onChange={num('dailyLimit')} /></Field>
           <div />
           <Field label="Pausa mínima (s)" hint="Entre un mensaje y otro"><input type="number" min={5} max={600} value={form.delayMin || ''} onChange={num('delayMin')} /></Field>
           <Field label="Pausa máxima (s)"><input type="number" min={5} max={1800} value={form.delayMax || ''} onChange={num('delayMax')} /></Field>
           <Field label="Enviar desde"><input type="time" value={form.windowStart} onChange={(e) => set('windowStart', e.target.value)} /></Field>
           <Field label="Hasta"><input type="time" value={form.windowEnd} onChange={(e) => set('windowEnd', e.target.value)} /></Field>
         </div>
-        <div className="note">La pausa se aplica entre mensajes. El valor predeterminado es 30 segundos; ajusta el horario y el límite diario a tu operación.</div>
+        <div className="note">La pausa se aplica entre mensajes. El límite cuenta los intentos iniciados por cada teléfono, incluso los que quedan sin confirmación.</div>
       </section>
 
       <section className="card">
