@@ -25,11 +25,11 @@ const NAV: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: 'import', label: 'Importar', icon: Upload },
   { id: 'send', label: 'Envíos', icon: Activity },
   { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-  { id: 'review', label: 'Por revisar', icon: RotateCcw },
+  { id: 'review', label: 'Ventas', icon: RotateCcw },
   { id: 'history', label: 'Historial', icon: History },
   { id: 'tutorial', label: 'Tutorial', icon: BookOpen },
 ]
-const TITLES: Record<Page, string> = { dashboard: 'Inicio', prospects: 'Prospectos', import: 'Importar', send: 'Envíos', whatsapp: 'WhatsApp', review: 'Por revisar', history: 'Historial', settings: 'Configuración', tutorial: 'Tutorial' }
+const TITLES: Record<Page, string> = { dashboard: 'Inicio', prospects: 'Prospectos', import: 'Importar', send: 'Envíos', whatsapp: 'WhatsApp', review: 'Ventas', history: 'Historial', settings: 'Configuración', tutorial: 'Tutorial' }
 
 const readHash = (): Page => { const h = window.location.hash.replace('#/', '') as Page; return PAGES.includes(h) ? h : 'dashboard' }
 
@@ -70,7 +70,6 @@ function Shell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => vo
   useEffect(() => { const on = () => { setPageState(readHash()); setMenu(false); window.scrollTo(0, 0) }; window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on) }, [])
   const goto = (p: Page) => { window.location.hash = `#/${p}` }
   const wa = waLabel(stats?.whatsapp.state)
-  const review = stats ? stats.counts.failed + stats.counts.no_whatsapp : 0
 
   useEffect(() => { document.title = `${TITLES[page]} · BuyBot by Tekapto`; if (page !== 'prospects') setFilter('all') }, [page])
 
@@ -80,7 +79,7 @@ function Shell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => vo
         <button className="icon-btn only-mobile" aria-label="Cerrar menú" onClick={() => setMenu(false)}><X size={20} /></button></div>
       <div className="sidebar-label">ESPACIO DE TRABAJO</div>
       <nav>{NAV.map(({ id, label, icon: Icon }) => <button key={id} className={`nav ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => goto(id)}>
-        <Icon size={18} /><span>{label}</span>{id === 'review' && review > 0 && <em>{review}</em>}</button>)}</nav>
+        <Icon size={18} /><span>{label}</span></button>)}</nav>
       <div className="sidebar-foot">
         <button className={`nav ${page === 'settings' ? 'active' : ''}`} onClick={() => goto('settings')}><Settings size={18} /><span>Configuración</span></button>
         <button className={`wa-chip tone-${wa.tone}`} onClick={() => goto('whatsapp')}><i /><span>{wa.text}</span></button>

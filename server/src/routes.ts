@@ -268,6 +268,7 @@ export async function registerRoutes(app: FastifyInstance) {
         total, counts, replied,
         sentToday: queue.sentToday(), dailyLimit: settings.dailyLimit,
         blocked: queue.countBlocked(),
+        salesTotal: (db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM sales_tracking WHERE outcome = 'sold'").get() as {total:number}).total,
         campaign: queue.snapshot(),
         whatsapp: whatsapps.list().map((account) => whatsapps.get(account.id)!.snapshot).find((status) => status.state === 'connected') ?? whatsapp.snapshot,
       }
@@ -314,6 +315,19 @@ export async function registerRoutes(app: FastifyInstance) {
         return updated
       })
       return { affected, excludedOptedOut: counts.opted_out ?? 0 }
+    })
+
+    api.get('/api/sales', async () => ({ items: db.prepare("SELECT p.id,p.name,p.phone FROM prospects p LEFT JOIN sales_tracking s ON s.prospect_id=p.id WHERE p.status='sent' AND s.prospect_id IS NULL ORDER BY p.sent_at DESC LIMIT 500").all() }))
+    api.post('/api/sales/:id', async (request) => {
+      const id = Number((request.params as any).id)
+      const body = request.body as any
+      if (!['sold','dismissed'].includes(body?.outcome)) throw bad('Selecciona un resultado válido.')
+      const amount = Number(body.amount)
+      if (body.outcome === 'sold' && (!Number.isFinite(amount) || amount <= 0 || amount > 100000000)) throw bad('Indica un monto de venta válido.')
+      if (!db.prepare("SELECT id FROM prospects WHERE id=? AND status='sent'").get(id)) throw new HttpError(404, 'Contacto no encontrado.')
+      db.prepare('INSERT INTO sales_tracking(prospect_id,outcome,amount,updated_at) VALUES(?,?,?,?) ON CONFLICT(prospect_id) DO UPDATE SET outcome=excluded.outcome,amount=excluded.amount,updated_at=excluded.updated_at').run(id,body.outcome,body.outcome === 'sold' ? amount : null,nowIso())
+      audit(actor(request),'sale.'+body.outcome,'prospect',id,'Resultado de venta',body.outcome === 'sold' ? amount : '')
+      return {ok:true}
     })
 
     // ----- Prospectos -----

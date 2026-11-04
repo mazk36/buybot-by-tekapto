@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, CheckCircle2, Clock3, MessageSquareText, TriangleAlert, Users, Wifi } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock3, MessageSquareText, Users, Wifi } from 'lucide-react'
 import { api } from '../api'
 import type { AuditEvent, BaseSummary, Paged } from '../api'
 import { Button, Empty, PageHeader, Spinner } from '../ui'
 import { useStats, useUser } from '../store'
-import { formatTime, greeting } from '../format'
+import { formatMoney, formatTime, greeting } from '../format'
 import { waLabel } from './WhatsAppPage'
 import type { Page } from '../App'
 import { eventText } from './HistoryPage'
@@ -19,7 +19,6 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
   useEffect(() => { api<{ items: BaseSummary[] }>('GET', '/bases').then((r) => { setBases(r.items); setBasesError(false) }).catch(() => setBasesError(true)) }, [stats?.sentToday, stats?.total, stats?.counts.sent, stats?.counts.opted_out, stats?.counts.pending, stats?.counts.on_hold])
   if (!stats) return <Spinner />
   const wa = waLabel(stats.whatsapp.state)
-  const review = stats.counts.failed + stats.counts.no_whatsapp
   const setupDone = [stats.whatsapp.state === 'connected', stats.total > 0, stats.sentToday > 0 || stats.counts.sent > 0]
 
   return <>
@@ -34,6 +33,8 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
       </ol>
     </section>}
 
+    <section className="card goal"><span className="muted-label">VENTAS ACUMULADAS</span><div className="big-count"><strong>{formatMoney(stats.salesTotal)}</strong></div></section>
+
     <section className="card goal">
       <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>mensajes entre todos los números</span></div><p className="muted-text small">Límite configurado: {stats.dailyLimit} intentos diarios por número.</p></div>
       <div className="goal-foot"><span className={`status-pill ${stats.campaign.status}`}><i />{stats.campaign.status === 'running' ? 'Envío en curso' : stats.campaign.status === 'paused' ? 'Envío en pausa' : 'Envío detenido'}</span><Button variant="ghost" onClick={() => goto('send')}>Ir a envíos <ArrowRight size={15} /></Button></div>
@@ -42,7 +43,7 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
     <section className="kpis" aria-label="Indicadores">
       <Kpi icon={<Users size={18} />} label="Prospectos" value={stats.total} detail={`${stats.counts.pending} pendientes`} onClick={() => goto('prospects')} />
       <Kpi icon={<MessageSquareText size={18} />} label="Contactados" value={stats.counts.sent} detail={`${stats.replied} respondieron`} tone="green" onClick={() => goto('prospects')} />
-      <Kpi icon={<TriangleAlert size={18} />} label="Por revisar" value={review} detail="Con error o sin WhatsApp" tone={review ? 'amber' : undefined} onClick={() => goto('review')} />
+      <Kpi icon={<CheckCircle2 size={18} />} label="Ventas" value={formatMoney(stats.salesTotal)} small detail="Registrar ventas" onClick={() => goto('review')} />
       <Kpi icon={<Wifi size={18} />} label="WhatsApp" value={wa.text} small detail={stats.whatsapp.phone ? `+${stats.whatsapp.phone}` : 'Toca para administrar'} tone={wa.tone} onClick={() => goto('whatsapp')} />
     </section>
 

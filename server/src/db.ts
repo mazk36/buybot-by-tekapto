@@ -91,6 +91,7 @@ const migrations: string[] = [
     WHERE status IN ('sending', 'sent', 'unknown') OR sent_at IS NOT NULL;
   CREATE INDEX idx_messages_sender_started ON messages(sender_phone, send_started_at);
   `,
+  `CREATE TABLE sales_tracking (prospect_id INTEGER PRIMARY KEY REFERENCES prospects(id) ON DELETE CASCADE, outcome TEXT NOT NULL CHECK(outcome IN ('sold','dismissed')), amount REAL, updated_at TEXT NOT NULL);`,
 ]
 
 function migrate() {
