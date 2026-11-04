@@ -296,6 +296,23 @@ export async function registerRoutes(app: FastifyInstance) {
       return { items }
     })
 
+    api.get('/api/imports', async () => ({ items: db.prepare(`SELECT b.id,b.name,b.created_at AS createdAt,COUNT(p.id) AS total FROM import_batches b LEFT JOIN prospects p ON p.import_batch_id=b.id GROUP BY b.id ORDER BY b.id DESC`).all() }))
+    api.patch('/api/bases/:id', async (request) => {
+      const id = Number((request.params as any).id)
+      const raw = (request.body as any)?.name
+      if (!Number.isSafeInteger(id) || id <= 0) throw bad('Base no válida.')
+      if (typeof raw !== 'string') throw bad('Escribe un nombre válido.')
+      const name = raw.trim().replace(/\s+/g, ' ')
+      if (!name || name.length > 180 || /[\u0000-\u001f\u007f]/.test(name)) throw bad('El nombre debe tener entre 1 y 180 caracteres.')
+      return tx(() => {
+        const current = db.prepare('SELECT name FROM import_batches WHERE id=?').get(id) as {name:string} | undefined
+        if (!current) throw new HttpError(404, 'Base no encontrada.')
+        db.prepare('UPDATE import_batches SET name=? WHERE id=?').run(name,id)
+        if (current.name !== name) audit(actor(request),'base.rename','import_batch',id,name,{previous:current.name,name})
+        return {id,name}
+      })
+    })
+
     api.post('/api/bases/consent', async (request) => {
       const body = (request.body ?? {}) as { baseId?: number | null; confirmed?: boolean }
       if (body.confirmed !== true || !Object.hasOwn(body, 'baseId')) throw bad('Confirma la autorización de la base seleccionada.')

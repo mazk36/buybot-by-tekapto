@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import { CheckCircle2, CloudUpload, FileSpreadsheet, TriangleAlert } from 'lucide-react'
 import { api } from '../api'
-import { Button, PageHeader, Spinner, useToast } from '../ui'
+import { Button, Field, Modal, PageHeader, Spinner, useToast } from '../ui'
 import { useStats } from '../store'
 import { importedMessageName } from '../name'
 
@@ -48,6 +48,21 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
   const [drag, setDrag] = useState(false)
   const [consentAll, setConsentAll] = useState(true)
   const [assignExisting, setAssignExisting] = useState(false)
+
+  const [bases, setBases] = useState<{id:number;name:string;total:number;createdAt:string}[]>([])
+  const [baseError, setBaseError] = useState('')
+  const [basesLoading, setBasesLoading] = useState(true)
+  const [editingBase, setEditingBase] = useState<{id:number;name:string} | null>(null)
+  const [baseName, setBaseName] = useState('')
+  const [savingBase, setSavingBase] = useState(false)
+  const loadBases = async () => { try { setBases((await api<{items:typeof bases}>('GET','/imports')).items);setBaseError('') } catch(e) { setBaseError(e instanceof Error ? e.message : 'No se pudieron cargar las bases') } finally {setBasesLoading(false)} }
+  useEffect(() => { void loadBases() }, [result])
+  const renameBase = async () => {
+    if (!editingBase) return
+    setSavingBase(true)
+    try { await api('PATCH',`/bases/${editingBase.id}`,{name:baseName});setEditingBase(null);await loadBases();void refresh();toast('Nombre actualizado') }
+    catch(e) { toast(e instanceof Error ? e.message : 'No se pudo cambiar el nombre','error') } finally { setSavingBase(false) }
+  }
 
   const parse = async (f: File) => {
     setError(''); setResult(null); setRows([]); setFile(f.name); setConsentAll(true); setAssignExisting(false); setLoading(true)
@@ -108,6 +123,11 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
 
   return <>
     <PageHeader eyebrow="BASE DE CLIENTES" title="Importar prospectos" subtitle="Sube Excel o CSV. Para nuevos prospectos se necesita DNI, nombre y WhatsApp; también puedes asociar contactos existentes con DNI y teléfono." />
+    <section className="card">
+      <h3 className="card-title">Bases importadas</h3>
+      {basesLoading ? <Spinner /> : baseError ? <p className="error-text">{baseError} <Button onClick={() => void loadBases()}>Reintentar</Button></p> : !bases.length ? <p className="muted-text">Todavía no has importado ninguna base.</p> : <ul className="feed">{bases.map(base => <li key={base.id}><div><strong>{base.name}</strong><small>{base.total.toLocaleString('es-PE')} contactos · {new Intl.DateTimeFormat('es-PE',{dateStyle:'medium',timeStyle:'short'}).format(new Date(base.createdAt))}</small></div><Button onClick={() => {setEditingBase(base);setBaseName(base.name)}}>Cambiar nombre</Button></li>)}</ul>}
+    </section>
+    {editingBase && <Modal title="Cambiar nombre de la base" onClose={() => setEditingBase(null)} footer={<><Button onClick={() => setEditingBase(null)}>Cancelar</Button><Button variant="primary" busy={savingBase} disabled={!baseName.trim()} onClick={() => void renameBase()}>Guardar nombre</Button></>}><Field label="Nombre de la base"><input autoFocus value={baseName} maxLength={180} onChange={e => setBaseName(e.target.value)} /></Field></Modal>}
     {!rows.length && !result && <section className="card">
       <div className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>
         <span className="dz-icon"><CloudUpload size={26} /></span>

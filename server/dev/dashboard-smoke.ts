@@ -22,5 +22,13 @@ try {
  const list=(await app.inject({url:'/api/prospects?status=all',headers})).json();assert.equal(list.total,1)
  const excluded=(await app.inject({url:'/api/prospects?status=no_whatsapp',headers})).json();assert.equal(excluded.total,1)
  const bases=(await app.inject({url:'/api/bases',headers})).json();assert.equal(bases.items[0].contacted,1);assert.equal(bases.items[0].total,1)
+ const imports=(await app.inject({url:'/api/imports',headers})).json();assert.equal(imports.items[0].total,2)
+ const renamed=await app.inject({method:'PATCH',url:`/api/bases/${base}`,headers,payload:{name:'  Base renombrada  '}});assert.equal(renamed.statusCode,200)
+ assert.equal((await app.inject({url:'/api/imports',headers})).json().items[0].name,'Base renombrada')
+ assert.equal((await app.inject({url:'/api/bases',headers})).json().items[0].name,'Base renombrada')
+ assert.equal((await app.inject({method:'PATCH',url:`/api/bases/${base}`,headers,payload:{name:' '}})).statusCode,400)
+ assert.equal((await app.inject({method:'PATCH',url:'/api/bases/999999',headers,payload:{name:'No existe'}})).statusCode,404)
+ assert.equal((await app.inject({url:'/api/imports'})).statusCode,401)
+ assert.equal((db.prepare('SELECT COUNT(*) AS n FROM prospects').get() as any).n,2)
  console.log('OK: API concilia contactos y mensajes manuales; filtro conserva registros sin WhatsApp.')
 } finally { if(token)destroySession(token);await app.close();db.close();rmSync(dir,{recursive:true,force:true}) }
