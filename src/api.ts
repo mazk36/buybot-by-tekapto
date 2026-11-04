@@ -18,7 +18,7 @@ export interface Campaign {
   mixBases: boolean
 }
 export interface Stats {
-  salesTotal: number; total: number; counts: Record<Status, number>; replied: number; sentToday: number; dailyLimit: number; blocked: number
+  totalMessagesToday: number; manualMessagesToday: number; contactedTotal: number; salesTotal: number; total: number; counts: Record<Status, number>; replied: number; sentToday: number; dailyLimit: number; blocked: number
   campaign: Campaign; whatsapp: WaStatus
 }
 export interface Settings {

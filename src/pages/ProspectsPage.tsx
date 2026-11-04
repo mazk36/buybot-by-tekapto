@@ -7,7 +7,7 @@ import { useStats } from '../store'
 import { downloadUrl, formatDateTime, formatMoney, formatPhone, formatRate, initials } from '../format'
 
 const FILTERS: { id: Status | 'all'; label: string }[] = [
-  { id: 'all', label: 'Todos' }, { id: 'pending', label: 'Pendientes' }, { id: 'sent', label: 'Enviados' },
+  { id: 'all', label: 'Listado principal' }, { id: 'pending', label: 'Pendientes' }, { id: 'sent', label: 'Enviados' },
   { id: 'failed', label: 'Con error' }, { id: 'no_whatsapp', label: 'Sin WhatsApp' }, { id: 'on_hold', label: 'En espera' }, { id: 'opted_out', label: 'No contactar' },
 ]
 

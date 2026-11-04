@@ -5,6 +5,7 @@ import { COOKIE, createSession, destroyOtherSessions, destroySession, hashPasswo
 import { audit, copyForDownload, db, getRaw, getSettings, nowIso, setRaw, tx, webhookSecret, DEFAULT_TEMPLATE } from './db.js'
 import { config } from './config.js'
 import { queue } from './queue.js'
+import { contactMetrics } from './metrics.js'
 import { whatsapp, whatsapps } from './whatsapp.js'
 import { EvolutionError, evolution } from './evolution.js'
 import { accountViews, sentByAccount } from './senders.js'
@@ -105,6 +106,7 @@ function prospectFilter(query: any) {
     if (!STATUSES.includes(query.status)) throw bad('Estado no válido.')
     where.push('status = ?'); params.push(query.status)
   }
+  if (!query.status || query.status === 'all') where.push("status != 'no_whatsapp'")
   if (query.q) {
     const like = `%${String(query.q).trim().toLowerCase()}%`
     where.push('(lower(name) LIKE ? OR dni LIKE ? OR phone LIKE ?)'); params.push(like, like, like)
@@ -265,8 +267,8 @@ export async function registerRoutes(app: FastifyInstance) {
       const replied = (db.prepare('SELECT COUNT(*) AS n FROM prospects WHERE replied_at IS NOT NULL').get() as any).n
       const settings = getSettings()
       return {
-        total, counts, replied,
-        sentToday: queue.sentToday(), dailyLimit: settings.dailyLimit,
+        total: total - counts.no_whatsapp, counts, replied,
+        ...contactMetrics(db, startOfLocalDay()), dailyLimit: settings.dailyLimit,
         blocked: queue.countBlocked(),
         salesTotal: (db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM sales_tracking WHERE outcome = 'sold'").get() as {total:number}).total,
         campaign: queue.snapshot(),
@@ -287,6 +289,7 @@ export async function registerRoutes(app: FastifyInstance) {
           SUM(CASE WHEN p.whatsapp_opt_in = 1 THEN 1 ELSE 0 END) AS consented,
           SUM(CASE WHEN p.status = 'pending' AND p.whatsapp_opt_in = 1 THEN 1 ELSE 0 END) AS pending
         FROM prospects p LEFT JOIN import_batches b ON b.id = p.import_batch_id
+        WHERE p.status != 'no_whatsapp'
         GROUP BY p.import_batch_id, b.name
         ORDER BY p.import_batch_id IS NULL, b.name COLLATE NOCASE, p.import_batch_id
       `).all()

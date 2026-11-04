@@ -38,13 +38,14 @@ export function DashboardPage({ goto }: { goto: (p: Page) => void }) {
     <section className="card goal"><span className="muted-label">VENTAS ACUMULADAS</span><div className="big-count"><strong>{formatSales(stats.salesTotal)}</strong></div></section>
 
     <section className="card goal">
-      <div><span className="muted-label">ENVIADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>mensajes entre todos los números</span></div><p className="muted-text small">Límite configurado: {stats.dailyLimit} intentos diarios por número.</p></div>
+      <div><span className="muted-label">CONTACTADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>personas de tus bases</span></div><p className="muted-text small">Límite configurado: {stats.dailyLimit} intentos diarios por número.</p></div>
+      <p className="muted-text small">Mensajes enviados hoy: {stats.totalMessagesToday} · Manuales o pruebas: {stats.manualMessagesToday}. Una persona puede recibir varios mensajes.</p>
       <div className="goal-foot"><span className={`status-pill ${stats.campaign.status}`}><i />{stats.campaign.status === 'running' ? 'Envío en curso' : stats.campaign.status === 'paused' ? 'Envío en pausa' : 'Envío detenido'}</span><Button variant="ghost" onClick={() => goto('send')}>Ir a envíos <ArrowRight size={15} /></Button></div>
     </section>
 
     <section className="kpis" aria-label="Indicadores">
-      <Kpi icon={<Users size={18} />} label="Prospectos" value={stats.total} detail={`${stats.counts.pending} pendientes`} onClick={() => goto('prospects')} />
-      <Kpi icon={<MessageSquareText size={18} />} label="Contactados" value={stats.counts.sent} detail={`${stats.replied} respondieron`} tone="green" onClick={() => goto('prospects')} />
+      <Kpi icon={<Users size={18} />} label="Prospectos" value={stats.total} detail={`${stats.counts.pending} pendientes · ${stats.counts.no_whatsapp} sin WhatsApp excluidos`} onClick={() => goto('prospects')} />
+      <Kpi icon={<MessageSquareText size={18} />} label="Contactados" value={stats.contactedTotal} detail={`${stats.replied} respondieron`} tone="green" onClick={() => goto('prospects')} />
       <Kpi icon={<CheckCircle2 size={18} />} label="Ventas" value={formatSales(stats.salesTotal)} small detail="Registrar ventas" onClick={() => goto('review')} />
       <Kpi icon={<Wifi size={18} />} label="WhatsApp" value={wa.text} small detail={stats.whatsapp.phone ? `+${stats.whatsapp.phone}` : 'Toca para administrar'} tone={wa.tone} onClick={() => goto('whatsapp')} />
     </section>
