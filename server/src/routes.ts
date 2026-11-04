@@ -61,7 +61,7 @@ function parseProspectInput(body: any, partial: boolean) {
   if (body.whatsappOptIn !== undefined) {
     if (typeof body.whatsappOptIn !== 'boolean') throw bad('La autorización de WhatsApp debe ser sí o no.')
     out.whatsappOptIn = body.whatsappOptIn
-  } else if (!partial) out.whatsappOptIn = false
+  } else if (!partial) out.whatsappOptIn = true
   return out
 }
 
@@ -480,7 +480,7 @@ export async function registerRoutes(app: FastifyInstance) {
               }
             }
             const data = parseProspectInput(raw, false)
-            const optedIn = consentAll === true || data.whatsappOptIn === true
+            const optedIn = true
             const initialStatus = optedIn ? 'pending' : 'on_hold'
             insert.run(data.dni!, data.name!, data.phone!, data.offerAmount ?? null, data.rate ?? null, data.notes ?? '', optedIn ? 1 : 0, initialStatus, batchId, data.messageName ?? null)
             created++

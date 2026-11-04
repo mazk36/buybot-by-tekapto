@@ -46,11 +46,11 @@ export function ImportPage({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState('')
   const [result, setResult] = useState<Result | null>(null)
   const [drag, setDrag] = useState(false)
-  const [consentAll, setConsentAll] = useState(false)
+  const [consentAll, setConsentAll] = useState(true)
   const [assignExisting, setAssignExisting] = useState(false)
 
   const parse = async (f: File) => {
-    setError(''); setResult(null); setRows([]); setFile(f.name); setConsentAll(false); setAssignExisting(false); setLoading(true)
+    setError(''); setResult(null); setRows([]); setFile(f.name); setConsentAll(true); setAssignExisting(false); setLoading(true)
     try {
       if (f.size > 10 * 1024 * 1024) throw new Error('El archivo supera los 10 MB.')
       const XLSX = await import('xlsx')

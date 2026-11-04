@@ -28,6 +28,7 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
   const [baseChoice, setBaseChoice] = useState('')
   const [confirmConsent, setConfirmConsent] = useState(false)
   const [consentBusy, setConsentBusy] = useState(false)
+  const toggleMix = async () => { try { await api('PUT', '/campaign/mix', { enabled: !stats?.campaign.mixBases }); await refresh() } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error') } }
 
   const load = useCallback(async () => {
     try {
@@ -84,7 +85,8 @@ export function ProspectsPage({ initialFilter, onImport }: { initialFilter?: Sta
         <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditing('new')}>Nuevo prospecto</Button>
       </>} />
 
-    {bases.length > 0 && <section className="card">
+    <section className="card"><div className="card-head"><div><strong>Mezclar bases</strong><p className="muted-text small">Alterna los prospectos de cada base automáticamente.</p></div><Button aria-pressed={!!stats?.campaign.mixBases} onClick={() => void toggleMix()}>{stats?.campaign.mixBases ? "Mezcla activada" : "Activar mezcla"}</Button></div></section>
+    {false && bases.length > 0 && <section className="card">
       <h3 className="card-title">Autorización por base</h3>
       <p className="muted-text">Confirma una sola vez la autorización de los contactos de la base seleccionada.</p>
       <Field label="Base de datos"><select className="select" aria-label="Base de datos" value={baseChoice} onChange={(e) => setBaseChoice(e.target.value)}>
