@@ -22,6 +22,12 @@ class Queue {
   scheduleError: string | null = null
   nextAt = 0
   currentProspectId: number | null = null
+  get ownerId(): number | null { return Number(getRaw('campaign_owner_user_id')) || null }
+  canManage(userId: number) { return this.ownerId === null || this.ownerId === userId }
+  claimUser(userId: number): boolean {
+    if (!this.canManage(userId) && (this.status !== 'stopped' || this.scheduledAt)) return false
+    setRaw('campaign_owner_user_id', String(userId)); return true
+  }
   private busy = false
   private timer: NodeJS.Timeout | null = null
 
@@ -147,16 +153,17 @@ class Queue {
     audit(actor, 'campaign.stop', 'campaign', null, 'Detuvo el envío')
   }
 
-  snapshot() {
+  snapshot(userId?: number) {
+    const own = userId === undefined || this.ownerId === userId
     return {
-      status: this.status,
-      reason: this.reason,
-      reasonText: this.reasonText,
-      nextAt: this.nextAt && this.nextAt > Date.now() ? new Date(this.nextAt).toISOString() : null,
-      currentProspectId: this.currentProspectId,
+      status: own ? this.status : 'stopped',
+      reason: own ? this.reason : null,
+      reasonText: own ? this.reasonText : null,
+      nextAt: own && this.nextAt && this.nextAt > Date.now() ? new Date(this.nextAt).toISOString() : null,
+      currentProspectId: own ? this.currentProspectId : null,
       mixBases: getRaw('campaign_mix_bases') === '1',
-      scheduledAt: this.scheduledAt,
-      scheduleError: this.scheduleError,
+      scheduledAt: own ? this.scheduledAt : null,
+      scheduleError: own ? this.scheduleError : null,
     }
   }
 
@@ -222,7 +229,7 @@ class Queue {
       this.nextAt = Date.now() + 30_000
       return
     }
-    const selection = await pickSender()
+    const selection = await pickSender(this.ownerId)
     const sender = selection.sender
     if (!sender) {
       const limited = selection.reason === 'limit'

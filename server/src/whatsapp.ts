@@ -1,6 +1,6 @@
 import { config } from './config.js'
 import { randomBytes } from 'node:crypto'
-import { audit, getRaw, setRaw, webhookSecret } from './db.js'
+import { audit, db, getRaw, setRaw, webhookSecret } from './db.js'
 import { EvolutionError, evolution, evolutionConfigured } from './evolution.js'
 
 export type WaState = 'evolution_not_configured' | 'evolution_unreachable' | 'no_instance' | 'disconnected' | 'connecting' | 'connected'
@@ -183,47 +183,40 @@ class WhatsAppService {
   poke() { void this.refresh(true) }
 }
 
-export interface WhatsAppAccount { id: string; label: string }
+export interface WhatsAppAccount { id: string; label: string; userId: number }
 
 class WhatsAppAccounts {
   private services = new Map<string, WhatsAppService>()
 
-  list(): WhatsAppAccount[] {
-    const fallback = [{ id: config.instanceName, label: 'WhatsApp principal' }]
-    try {
-      const parsed: unknown = JSON.parse(getRaw('wa_accounts') ?? 'null')
-      if (!Array.isArray(parsed)) return fallback
-      const valid = parsed.filter((item): item is WhatsAppAccount =>
-        typeof item?.id === 'string' && typeof item?.label === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(item.id))
-      return valid.some((item) => item.id === config.instanceName) ? valid : [...fallback, ...valid]
-    } catch { return fallback }
+  list(userId?: number): WhatsAppAccount[] {
+    return (userId === undefined
+      ? db.prepare('SELECT instance_name AS id,label,user_id AS userId FROM whatsapp_user_accounts').all()
+      : db.prepare('SELECT instance_name AS id,label,user_id AS userId FROM whatsapp_user_accounts WHERE user_id=?').all(userId)) as unknown as WhatsAppAccount[]
   }
 
-  get(id: string): WhatsAppService | undefined {
-    if (!this.list().some((account) => account.id === id)) return undefined
+  forUser(userId: number): WhatsAppAccount {
+    const existing = this.list(userId)[0]
+    if (existing) return existing
+    const id = `buybot-user-${userId}-${randomBytes(8).toString('hex')}`
+    db.prepare('INSERT OR IGNORE INTO whatsapp_user_accounts(user_id,instance_name,label) VALUES(?,?,?)').run(userId,id,'Mi WhatsApp')
+    return this.list(userId)[0]
+  }
+
+  get(id: string, userId?: number): WhatsAppService | undefined {
+    if (!this.list(userId).some(account => account.id === id)) return undefined
     let service = this.services.get(id)
     if (!service) { service = new WhatsAppService(id); this.services.set(id, service) }
     return service
   }
 
-  create(label: string, actor: string): WhatsAppAccount {
-    const accounts = this.list()
-    const account = { id: `buybot-${randomBytes(8).toString('hex')}`, label }
-    setRaw('wa_accounts', JSON.stringify([...accounts, account]))
-    audit(actor, 'whatsapp.account_create', 'whatsapp', account.id, label)
-    return account
-  }
-
-  async refreshAll(force = false) {
-    return Promise.all(this.list().map(async (account) => ({ ...account, status: await this.get(account.id)!.refresh(force) })))
+  async refreshAll(force = false, userId?: number) {
+    return Promise.all(this.list(userId).map(async account => ({...account, status: await this.get(account.id)!.refresh(force)})))
   }
 
   poke(id?: string) {
-    if (id && this.get(id)) this.get(id)!.poke()
+    if (id) this.get(id)?.poke()
     else for (const account of this.list()) this.get(account.id)!.poke()
   }
 }
 
 export const whatsapps = new WhatsAppAccounts()
-// Compatibilidad con la cuenta vinculada antes de incorporar varios números.
-export const whatsapp = whatsapps.get(config.instanceName)!

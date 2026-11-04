@@ -92,6 +92,14 @@ const migrations: string[] = [
   CREATE INDEX idx_messages_sender_started ON messages(sender_phone, send_started_at);
   `,
   `CREATE TABLE sales_tracking (prospect_id INTEGER PRIMARY KEY REFERENCES prospects(id) ON DELETE CASCADE, outcome TEXT NOT NULL CHECK(outcome IN ('sold','dismissed')), amount REAL, updated_at TEXT NOT NULL);`,
+  `CREATE TABLE whatsapp_user_accounts (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    instance_name TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL
+  );
+  INSERT INTO settings(key,value) VALUES('campaign_scheduled_at','') ON CONFLICT(key) DO UPDATE SET value='';
+  INSERT INTO settings(key,value) VALUES('campaign_status','paused') ON CONFLICT(key) DO UPDATE SET value='paused';
+  INSERT INTO settings(key,value) VALUES('campaign_owner_user_id','') ON CONFLICT(key) DO UPDATE SET value='';`,
 ]
 
 function migrate() {

@@ -19,15 +19,15 @@ export function sentByAccount(id: string, phone: string | null): number {
     )`).get(startOfLocalDay(), phone ?? '', ...aliases, legacyPrimary) as { n: number }).n
 }
 
-export async function accountViews(force = false) {
-  const accounts = await whatsapps.refreshAll(force)
+export async function accountViews(userId: number, force = false) {
+  const accounts = await whatsapps.refreshAll(force, userId)
   const dailyLimit = getSettings().dailyLimit
   return accounts.map((account) => ({ ...account, sentToday: sentByAccount(account.id, account.status.phone ?? getRaw(`wa_phone:${account.id}`)), dailyLimit }))
 }
 
 /** Alterna números conectados, sin contar dos sesiones del mismo teléfono como números distintos. */
-export async function pickSender(): Promise<{ sender: Sender | null; reason: 'disconnected' | 'unidentified' | 'limit' | null }> {
-  const accounts = await whatsapps.refreshAll()
+export async function pickSender(userId: number | null): Promise<{ sender: Sender | null; reason: 'disconnected' | 'unidentified' | 'limit' | null }> {
+  const accounts = userId ? await whatsapps.refreshAll(false, userId) : []
   const connected = accounts.filter((account) => account.status.state === 'connected')
   if (!connected.length) return { sender: null, reason: 'disconnected' }
   const seen = new Set<string>()

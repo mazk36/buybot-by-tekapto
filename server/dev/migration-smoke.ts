@@ -24,7 +24,7 @@ try {
   assert.equal(run.status, 0, run.stderr)
   const migrated = new DatabaseSync(path)
   assert.equal((migrated.prepare('PRAGMA integrity_check').get() as any).integrity_check, 'ok')
-  assert.equal((migrated.prepare('PRAGMA user_version').get() as any).user_version, 4)
+  assert.equal((migrated.prepare('PRAGMA user_version').get() as any).user_version, 6)
   assert.deepEqual({ ...(migrated.prepare('SELECT id, dni, status, whatsapp_opt_in, import_batch_id, message_name FROM prospects').get() as any) },
     { id: 1, dni: '70000001', status: 'sent', whatsapp_opt_in: 1, import_batch_id: null, message_name: null })
   assert.equal((migrated.prepare('SELECT send_started_at FROM messages').get() as any).send_started_at, '2026-01-01T12:01:00.000Z')

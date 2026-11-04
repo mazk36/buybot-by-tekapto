@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, CloudOff, LoaderCircle, Plug, PlugZap, Plus, QrCode, RefreshCw, Send, Server, Smartphone, WifiOff } from 'lucide-react'
+import { CheckCircle2, CloudOff, LoaderCircle, Plug, PlugZap, QrCode, RefreshCw, Send, Server, Smartphone, WifiOff } from 'lucide-react'
 import { api } from '../api'
 import type { WaStatus } from '../api'
 import { Button, ConfirmDialog, Field, Modal, PageHeader, useToast, usePolling } from '../ui'
@@ -25,7 +25,6 @@ export function WhatsAppPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<'disconnect' | 'reset' | null>(null)
   const [testOpen, setTestOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
   const [, tick] = useState(0)
 
   const load = async () => {
@@ -51,8 +50,7 @@ export function WhatsAppPage() {
   const qrLeft = wa?.qrAgeSeconds != null ? Math.max(0, 24 - wa.qrAgeSeconds) : null
 
   return <>
-    <PageHeader eyebrow="CONEXIÓN" title="WhatsApp" subtitle="Vincula uno o más números y administra cada conexión por separado."
-      actions={<Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>Agregar WhatsApp</Button>} />
+    <PageHeader eyebrow="CONEXIÓN" title="Mi WhatsApp" subtitle="Esta conexión pertenece únicamente a tu cuenta. Vincula tu número escaneando su QR." />
     <div className="alert alert-warn">El QR usa Evolution API para vincular una sesión de WhatsApp Web de terceros. WhatsApp no la respalda y advierte que el uso de clientes no oficiales puede causar bloqueos. Para una operación estable, conviene migrar a la plataforma oficial de WhatsApp Business.</div>
     <div className="wa-accounts" aria-label="Números de WhatsApp">
       {accounts.map((account) => <button key={account.id} type="button" className={`wa-account ${selectedId === account.id ? 'active' : ''}`} aria-pressed={selectedId === account.id} onClick={() => setSelectedId(account.id)}>
@@ -117,7 +115,7 @@ export function WhatsAppPage() {
           <li><PlugZap size={16} /><span>Toca <b>Dispositivos vinculados</b> (en Ajustes o menú ⋮).</span></li>
           <li><QrCode size={16} /><span>Elige <b>Vincular un dispositivo</b> y apunta al QR.</span></li>
         </ol>
-        <div className="note">BuyBot alterna los números conectados y aplica el límite diario a cada teléfono. Agregar números no garantiza evitar los límites o restricciones de WhatsApp.</div>
+        <div className="note">Los envíos de tu campaña usan únicamente el WhatsApp vinculado a tu cuenta. Cada cuenta debe escanear su propio QR.</div>
         {state === 'connected' && <Button variant="ghost" icon={<RefreshCw size={15} />} onClick={() => setConfirm('reset')}>Reiniciar conexión</Button>}
       </aside>
     </div>
@@ -129,27 +127,10 @@ export function WhatsAppPage() {
       text="Se elimina la sesión actual en Evolution y se genera un QR nuevo. Úsalo si el QR no aparece o la conexión quedó trabada. El envío se pausará."
       onCancel={() => setConfirm(null)} onConfirm={async () => { await act('reset', 'reset', 'Conexión reiniciada'); setConfirm(null) }} />}
     {testOpen && <TestDialog accountId={selectedId} onClose={() => setTestOpen(false)} />}
-    {addOpen && <AddAccountDialog onClose={() => setAddOpen(false)} onAdded={async (id) => { setSelectedId(id); setAddOpen(false); await load(); void refresh() }} />}
   </>
 }
 
 interface AccountView { id: string; label: string; status: WaStatus; sentToday: number; dailyLimit: number }
-
-function AddAccountDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (id: string) => void }) {
-  const [label, setLabel] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const add = async () => {
-    setBusy(true); setError('')
-    try { const result = await api<{ id: string }>('POST', '/whatsapp/accounts', { label }); onAdded(result.id) }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo agregar el número') }
-    finally { setBusy(false) }
-  }
-  return <Modal title="Agregar WhatsApp" onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" busy={busy} disabled={!label.trim()} onClick={() => void add()}>Agregar</Button></>}>
-    <p className="muted-text">Dale un nombre para reconocer este número. Después podrás vincularlo con su propio QR.</p>
-    <Field label="Nombre del número" error={error}><input value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)} placeholder="Ej. WhatsApp de Cristina" /></Field>
-  </Modal>
-}
 
 function TestDialog({ accountId, onClose }: { accountId: string; onClose: () => void }) {
   const toast = useToast()

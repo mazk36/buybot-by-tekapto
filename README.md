@@ -7,7 +7,7 @@ Automatización de primer contacto para asesoras comerciales. Cristina puede car
 - **Login** (cuenta inicial reclamable y cuentas invitadas por código de un solo uso; acceso compartido al espacio de trabajo; contraseñas con scrypt y sesión por cookie).
 - **Prospectos**: CRUD completo, búsqueda, filtros, edición masiva, importación Excel/CSV, exportación. Los ya contactados quedan protegidos (DNI y WhatsApp bloqueados, eliminar exige confirmar).
 - **Base local SQLite** (`data/buybot.db`), historial de auditoría de todo cambio, respaldo diario automático y descarga manual.
-- **WhatsApp por QR**: varias sesiones independientes, alternancia entre números conectados y límite diario por teléfono. Los intentos sin confirmar cuentan para el límite y quedan para revisión.
+- **WhatsApp por QR**: un WhatsApp independiente por cuenta de usuario y límite diario por teléfono. La conexión anterior compartida no se asigna automáticamente a ningún usuario. Los intentos sin confirmar cuentan para el límite y quedan para revisión.
 - **Cola de envío** persistente: pausa/reanuda/detiene, inicio programado, horario, mezcla entre archivos y recuperación tras caídas sin duplicar; procesa respuestas "BAJA" cuando Evolution entrega el webhook.
 - La pausa predeterminada entre clientes es de 30 segundos y se puede ajustar.
 - Plantilla inicial genérica para Cristina. `[nombre]` usa un nombre y un apellido; `[monto]` y `[tasa]` son variables opcionales. Para registros antiguos sin componentes separados se aproxima con el primer nombre y último apellido; puede corregirse por prospecto.
@@ -44,3 +44,5 @@ Para probar Evolution real desde el modo de desarrollo, configura `EVOLUTION_API
 
 ## Aviso
 Evolution API conecta mediante una sesión no oficial de WhatsApp Web; no equivale a la Cloud API oficial y puede provocar bloqueos o perder compatibilidad. Para producción, conviene confirmar la elegibilidad del caso de uso con Meta y considerar la Cloud API oficial. Contacta solo a personas con autorización explícita; los registros sin autorización quedan en espera.
+
+Cada usuario debe vincular su propio número. La cola compartida solo envía con el número del usuario que la inició; otra cuenta no puede controlar esa campaña. Los contactos y reportes siguen siendo del espacio compartido.
