@@ -22,46 +22,36 @@ class Queue {
   scheduleError: string | null = null
   nextAt = 0
   currentProspectId: number | null = null
-  get ownerId(): number | null { return Number(getRaw('campaign_owner_user_id')) || null }
-  canManage(userId: number) { return this.ownerId === null || this.ownerId === userId }
-  claimUser(userId: number): boolean {
-    if (!this.canManage(userId) && (this.status !== 'stopped' || this.scheduledAt)) return false
-    setRaw('campaign_owner_user_id', String(userId)); return true
+  constructor(readonly ownerId: number) {
+    if (this.read('mix_bases') === null) this.write('mix_bases', getRaw('campaign_mix_bases') ?? '0')
   }
+
+  private key(name: string) { return `campaign_user:${this.ownerId}:${name}` }
+  private read(name: string) { return getRaw(this.key(name)) }
+  private write(name: string, value: string) { setRaw(this.key(name), value) }
   private busy = false
   private timer: NodeJS.Timeout | null = null
 
   init() {
-    // Recuperación tras un cierre inesperado: lo que quedó "enviando" NO se reenvía solo
-    // (podría haberse entregado). Se marca para revisión manual.
-    const stuck = db.prepare(`SELECT id, prospect_id, name FROM messages WHERE status = 'sending'`).all() as { id: number; prospect_id: number | null; name: string }[]
-    for (const m of stuck) {
-      db.prepare(`UPDATE messages SET status = 'unknown', error = 'Envío interrumpido; verifica en WhatsApp si salió.' WHERE id = ?`).run(m.id)
-      if (m.prospect_id) {
-        db.prepare(`UPDATE prospects SET status = 'failed', last_error = 'Envío interrumpido: verifica en WhatsApp antes de reenviar.', updated_at = ? WHERE id = ?`).run(nowIso(), m.prospect_id)
-      }
-      audit('sistema', 'message.interrupted', 'prospect', m.prospect_id, m.name, 'El servidor se detuvo durante el envío')
-    }
-    db.prepare(`UPDATE prospects SET status = CASE WHEN whatsapp_opt_in = 1 THEN 'pending' ELSE 'on_hold' END WHERE status = 'sending'`).run()
-    const saved = getRaw('campaign_status')
+    const saved = this.read('status')
     // Tras reiniciar el servidor nunca arranca solo: si estaba corriendo queda en pausa.
     this.status = saved === 'running' || saved === 'paused' ? 'paused' : 'stopped'
-    setRaw('campaign_status', this.status)
-    const savedSchedule = getRaw('campaign_scheduled_at')
+    this.write('status', this.status)
+    const savedSchedule = this.read('scheduled_at')
     this.scheduledAt = savedSchedule && Number.isFinite(Date.parse(savedSchedule)) ? savedSchedule : null
-    this.scheduleError = getRaw('campaign_schedule_error') || null
+    this.scheduleError = this.read('schedule_error') || null
     this.timer = setInterval(() => void this.tick(), 1000)
   }
 
   shutdown() { if (this.timer) clearInterval(this.timer) }
 
-  private persist() { setRaw('campaign_status', this.status) }
+  private persist() { this.write('status', this.status) }
 
   setReason(reason: CampaignReason, text: string | null = null) { this.reason = reason; this.reasonText = text }
 
   setMix(enabled: boolean, actor: string) {
-    if ((getRaw('campaign_mix_bases') === '1') === enabled) return
-    setRaw('campaign_mix_bases', enabled ? '1' : '0')
+    if ((this.read('mix_bases') === '1') === enabled) return
+    this.write('mix_bases', enabled ? '1' : '0')
     audit(actor, 'campaign.mix', 'campaign', null, enabled ? 'Activó mezcla de bases' : 'Desactivó mezcla de bases')
   }
 
@@ -93,8 +83,8 @@ class Queue {
     if (error) return { ok: false, error }
     const scheduledAt = new Date(time).toISOString()
     tx(() => {
-      setRaw('campaign_scheduled_at', scheduledAt)
-      setRaw('campaign_schedule_error', '')
+      this.write('scheduled_at', scheduledAt)
+      this.write('schedule_error', '')
       audit(actor, 'campaign.schedule', 'campaign', null, 'Programó el inicio del envío', scheduledAt)
     })
     this.scheduledAt = scheduledAt
@@ -106,8 +96,8 @@ class Queue {
     if (!this.scheduledAt && !this.scheduleError) return
     const scheduledAt = this.scheduledAt
     tx(() => {
-      setRaw('campaign_scheduled_at', '')
-      setRaw('campaign_schedule_error', '')
+      this.write('scheduled_at', '')
+      this.write('schedule_error', '')
       audit(actor, 'campaign.schedule_cancel', 'campaign', null, 'Canceló el inicio programado', scheduledAt ?? '')
     })
     this.scheduledAt = null
@@ -121,9 +111,9 @@ class Queue {
     const wasPaused = this.status === 'paused'
     const previousSchedule = this.scheduledAt
     tx(() => {
-      setRaw('campaign_status', 'running')
-      setRaw('campaign_scheduled_at', '')
-      setRaw('campaign_schedule_error', '')
+      this.write('status', 'running')
+      this.write('scheduled_at', '')
+      this.write('schedule_error', '')
       audit(actor, scheduled ? 'campaign.scheduled_start' : wasPaused ? 'campaign.resume' : 'campaign.start', 'campaign', null,
         scheduled ? 'Inició el envío programado' : wasPaused ? 'Reanudó el envío' : 'Inició el envío', previousSchedule ?? '')
     })
@@ -153,17 +143,16 @@ class Queue {
     audit(actor, 'campaign.stop', 'campaign', null, 'Detuvo el envío')
   }
 
-  snapshot(userId?: number) {
-    const own = userId === undefined || this.ownerId === userId
+  snapshot() {
     return {
-      status: own ? this.status : 'stopped',
-      reason: own ? this.reason : null,
-      reasonText: own ? this.reasonText : null,
-      nextAt: own && this.nextAt && this.nextAt > Date.now() ? new Date(this.nextAt).toISOString() : null,
-      currentProspectId: own ? this.currentProspectId : null,
-      mixBases: getRaw('campaign_mix_bases') === '1',
-      scheduledAt: own ? this.scheduledAt : null,
-      scheduleError: own ? this.scheduleError : null,
+      status: this.status,
+      reason: this.reason,
+      reasonText: this.reasonText,
+      nextAt: this.nextAt && this.nextAt > Date.now() ? new Date(this.nextAt).toISOString() : null,
+      currentProspectId: this.currentProspectId,
+      mixBases: this.read('mix_bases') === '1',
+      scheduledAt: this.scheduledAt,
+      scheduleError: this.scheduleError,
     }
   }
 
@@ -173,7 +162,7 @@ class Queue {
       `SELECT id, dni, name, message_name, phone, offer_amount, rate, attempts, import_batch_id FROM prospects WHERE status = 'pending' AND whatsapp_opt_in = 1 ORDER BY id`,
     ).all() as unknown as ProspectRow[]
     let blocked = 0
-    const mix = getRaw('campaign_mix_bases') === '1'
+    const mix = this.read('mix_bases') === '1'
     const firstByBase = new Map<number, ProspectRow>()
     for (const row of rows) {
       if (missingVars(messageTemplate, row).length) { blocked++; continue }
@@ -183,7 +172,7 @@ class Queue {
     }
     if (!firstByBase.size) return { prospect: null, blocked }
     const bases = [...firstByBase.keys()].sort((a, b) => a - b)
-    const lastBase = Number(getRaw('campaign_last_base') ?? '-1')
+    const lastBase = Number(this.read('last_base') ?? '-1')
     const nextBase = bases.find((id) => id > lastBase) ?? bases[0]
     return { prospect: firstByBase.get(nextBase)!, blocked }
   }
@@ -196,8 +185,8 @@ class Queue {
         const result = this.start('sistema', true)
         if (!result.ok) {
           tx(() => {
-            setRaw('campaign_scheduled_at', '')
-            setRaw('campaign_schedule_error', result.error)
+            this.write('scheduled_at', '')
+            this.write('schedule_error', result.error)
             audit('sistema', 'campaign.schedule_failed', 'campaign', null, 'No se pudo iniciar el envío programado', { at, error: result.error })
           })
           this.scheduledAt = null
@@ -243,6 +232,13 @@ class Queue {
 
     const { prospect, blocked } = this.pickNext()
     if (!prospect) {
+      // Another user's worker may still be verifying a contact that can return to pending.
+      const active = db.prepare("SELECT 1 FROM prospects WHERE status = 'sending' LIMIT 1").get()
+      if (active) {
+        this.setReason('waiting', 'Esperando que terminen los contactos en proceso.')
+        this.nextAt = Date.now() + 2_000
+        return
+      }
       this.status = 'stopped'
       this.persist()
       this.setReason(blocked ? 'missing_data' : 'finished', blocked ? `${blocked} prospecto(s) no se enviaron porque les falta monto o tasa.` : 'Se procesó toda la base.')
@@ -260,7 +256,7 @@ class Queue {
       messageId = tx(() => {
         const claimed = db.prepare(`UPDATE prospects SET status = 'sending', updated_at = ? WHERE id = ? AND status = 'pending' AND whatsapp_opt_in = 1`).run(nowIso(), prospect.id)
         if (!claimed.changes) throw new Error('claimed')
-        if (getRaw('campaign_mix_bases') === '1') setRaw('campaign_last_base', String(prospect.import_batch_id ?? 0))
+        if (this.read('mix_bases') === '1') this.write('last_base', String(prospect.import_batch_id ?? 0))
         const res = db.prepare(`INSERT INTO messages(prospect_id,name,phone,body,status,sender_instance,sender_phone) VALUES(?,?,?,?, 'sending',?,?)`).run(prospect.id, prospect.name, prospect.phone, body, sender.id, sender.status.phone)
         return Number(res.lastInsertRowid)
       })
@@ -342,4 +338,60 @@ class Queue {
   }
 }
 
-export const queue = new Queue()
+class CampaignQueues {
+  private queues = new Map<number, Queue>()
+  private initialized = false
+
+  forUser(userId: number): Queue {
+    let value = this.queues.get(userId)
+    if (!value) {
+      value = new Queue(userId)
+      this.queues.set(userId, value)
+      if (this.initialized) value.init()
+    }
+    return value
+  }
+
+  init() {
+    if (this.initialized) return
+    // Recuperación tras un cierre inesperado: lo que quedó "enviando" NO se reenvía solo
+    // (podría haberse entregado). Se marca para revisión manual.
+    const stuck = db.prepare(`SELECT id, prospect_id, name FROM messages WHERE status = 'sending'`).all() as { id: number; prospect_id: number | null; name: string }[]
+    for (const m of stuck) {
+      db.prepare(`UPDATE messages SET status = 'unknown', error = 'Envío interrumpido; verifica en WhatsApp si salió.' WHERE id = ?`).run(m.id)
+      if (m.prospect_id) {
+        db.prepare(`UPDATE prospects SET status = 'failed', last_error = 'Envío interrumpido: verifica en WhatsApp antes de reenviar.', updated_at = ? WHERE id = ?`).run(nowIso(), m.prospect_id)
+      }
+      audit('sistema', 'message.interrupted', 'prospect', m.prospect_id, m.name, 'El servidor se detuvo durante el envío')
+    }
+    db.prepare(`UPDATE prospects SET status = CASE WHEN whatsapp_opt_in = 1 THEN 'pending' ELSE 'on_hold' END WHERE status = 'sending'`).run()
+    // Transfer the previous owner's saved controls once; never resume a running bot on boot.
+    if (getRaw('campaign_per_user_initialized') !== '1') {
+      tx(() => {
+        const owner = Number(getRaw('campaign_owner_user_id'))
+        if (owner && db.prepare('SELECT 1 FROM users WHERE id = ?').get(owner)) {
+          for (const name of ['status', 'scheduled_at', 'schedule_error', 'mix_bases', 'last_base']) {
+            const value = getRaw(`campaign_${name}`)
+            if (value !== null) setRaw(`campaign_user:${owner}:${name}`, value)
+          }
+        }
+        setRaw('campaign_status', 'paused')
+        setRaw('campaign_scheduled_at', '')
+        setRaw('campaign_owner_user_id', '')
+        setRaw('campaign_per_user_initialized', '1')
+      })
+    }
+    // One worker per user within this single application process.
+    const users = db.prepare('SELECT id FROM users').all() as { id: number }[]
+    for (const user of users) this.forUser(user.id)
+    this.initialized = true
+    for (const worker of this.queues.values()) worker.init()
+  }
+
+  shutdown() {
+    for (const worker of this.queues.values()) worker.shutdown()
+    this.initialized = false
+  }
+}
+
+export const queue = new CampaignQueues()

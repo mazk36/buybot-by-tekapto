@@ -70,7 +70,7 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
   }
 
   return <>
-    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Controla el envío automático. Los mensajes salen uno por uno, con una pausa predeterminada de 30 segundos."
+    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Tu bot usa únicamente tu WhatsApp y puede enviar mientras otras cuentas también envían. Iniciar, pausar o programar aquí solo afecta a tu cuenta."
       actions={<span className={`status-pill ${c.status}`}><i />{label}</span>} />
 
     {wa.state !== 'connected' && <div className="alert alert-warn"><WifiOff size={18} /><div><strong>WhatsApp no está conectado</strong><p>El envío no avanza hasta que vincules un número.</p></div><Button onClick={() => goto('whatsapp')}>Conectar</Button></div>}
@@ -80,7 +80,7 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
 
     <section className="card send-hero">
       <div className="send-top">
-        <div><span className="muted-label">CONTACTADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>personas de tus bases</span></div><p className="muted-text small">Límite: {stats.dailyLimit} intentos diarios por número.</p></div>
+        <div><span className="muted-label">CONTACTADOS HOY</span><div className="big-count"><strong>{stats.sentToday}</strong><span>personas de tus bases</span></div><p className="muted-text small">Límite: {stats.dailyLimit} intentos diarios por número. Los contactos y este conteo son compartidos; cada prospecto se contacta una sola vez.</p></div>
         <div className="send-controls">
           {c.status === 'running'
             ? <Button busy={busy} icon={<Pause size={16} />} onClick={() => void act('pause')}>Pausar</Button>

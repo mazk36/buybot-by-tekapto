@@ -269,9 +269,9 @@ export async function registerRoutes(app: FastifyInstance) {
       return {
         total: total - counts.no_whatsapp, counts, replied,
         ...contactMetrics(db, startOfLocalDay()), dailyLimit: settings.dailyLimit,
-        blocked: queue.countBlocked(),
+        blocked: queue.forUser(request.user!.id).countBlocked(),
         salesTotal: (db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM sales_tracking WHERE outcome = 'sold'").get() as {total:number}).total,
-        campaign: queue.snapshot(request.user!.id),
+        campaign: queue.forUser(request.user!.id).snapshot(),
         whatsapp: await whatsapps.get(whatsapps.forUser(request.user!.id).id, request.user!.id)!.refresh(),
       }
     })
@@ -532,32 +532,30 @@ export async function registerRoutes(app: FastifyInstance) {
     })
 
     // ----- Campaña -----
-    api.get('/api/campaign', async request => queue.snapshot(request.user!.id))
+    api.get('/api/campaign', async request => queue.forUser(request.user!.id).snapshot())
     api.put('/api/campaign/mix', async (request) => {
       const { enabled } = (request.body ?? {}) as { enabled?: unknown }
       if (typeof enabled !== 'boolean') throw bad('Selecciona si deseas mezclar las bases.')
-      queue.setMix(enabled, actor(request))
-      return queue.snapshot(request.user!.id)
+      queue.forUser(request.user!.id).setMix(enabled, actor(request))
+      return queue.forUser(request.user!.id).snapshot()
     })
     api.post('/api/campaign/:action', async (request) => {
       const action = (request.params as any).action
       const who = actor(request)
       const uid = request.user!.id
-      if (['start','schedule'].includes(action)) {
-        whatsapps.forUser(uid)
-        if (!queue.claimUser(uid)) throw new HttpError(409, 'Otra cuenta tiene una campaña pendiente. Debe detenerla antes de cambiar de cuenta.')
-      } else if (!queue.canManage(uid)) throw new HttpError(403, 'Esta campaña pertenece a otra cuenta.')
+      const campaign = queue.forUser(uid)
+      if (['start', 'schedule'].includes(action)) whatsapps.forUser(uid)
       if (action === 'start') {
-        const result = queue.start(who)
+        const result = campaign.start(who)
         if (!result.ok) throw new HttpError(409, result.error)
       } else if (action === 'schedule') {
-        const result = queue.schedule(who, (request.body as any)?.at)
+        const result = campaign.schedule(who, (request.body as any)?.at)
         if (!result.ok) throw new HttpError(400, result.error)
-      } else if (action === 'cancel-schedule') queue.cancelSchedule(who)
-      else if (action === 'pause') queue.pause(who)
-      else if (action === 'stop') queue.stop(who)
+      } else if (action === 'cancel-schedule') campaign.cancelSchedule(who)
+      else if (action === 'pause') campaign.pause(who)
+      else if (action === 'stop') campaign.stop(who)
       else throw new HttpError(404, 'Acción no válida.')
-      return queue.snapshot(request.user!.id)
+      return queue.forUser(request.user!.id).snapshot()
     })
 
     // ----- WhatsApp -----
@@ -596,8 +594,8 @@ export async function registerRoutes(app: FastifyInstance) {
       const service = whatsapps.get(id, request.user!.id)
       if (!service) throw new HttpError(404, 'Número de WhatsApp no encontrado.')
       if (action === 'connect') return service.connect(actor(request))
-      if (action === 'disconnect') { if (queue.ownerId === request.user!.id) queue.pause(actor(request)); return service.disconnect(actor(request)) }
-      if (action === 'reset') { if (queue.ownerId === request.user!.id) queue.pause(actor(request)); return service.reset(actor(request)) }
+      if (action === 'disconnect') { queue.forUser(request.user!.id).pause(actor(request)); return service.disconnect(actor(request)) }
+      if (action === 'reset') { queue.forUser(request.user!.id).pause(actor(request)); return service.reset(actor(request)) }
       if (action === 'test') return sendTest(request, id)
       throw new HttpError(404, 'Acción no válida.')
     })
@@ -605,11 +603,11 @@ export async function registerRoutes(app: FastifyInstance) {
     api.get('/api/whatsapp/status', async request => whatsapps.get(whatsapps.forUser(request.user!.id).id, request.user!.id)!.refresh())
     api.post('/api/whatsapp/connect', async request => whatsapps.get(whatsapps.forUser(request.user!.id).id, request.user!.id)!.connect(actor(request)))
     api.post('/api/whatsapp/disconnect', async request => {
-      if(queue.ownerId === request.user!.id) queue.pause(actor(request))
+      queue.forUser(request.user!.id).pause(actor(request))
       return whatsapps.get(whatsapps.forUser(request.user!.id).id, request.user!.id)!.disconnect(actor(request))
     })
     api.post('/api/whatsapp/reset', async request => {
-      if(queue.ownerId === request.user!.id) queue.pause(actor(request))
+      queue.forUser(request.user!.id).pause(actor(request))
       return whatsapps.get(whatsapps.forUser(request.user!.id).id, request.user!.id)!.reset(actor(request))
     })
     api.post('/api/whatsapp/test', async request => sendTest(request, whatsapps.forUser(request.user!.id).id))
