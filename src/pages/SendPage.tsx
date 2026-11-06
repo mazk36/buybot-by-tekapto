@@ -70,7 +70,7 @@ export function SendPage({ goto }: { goto: (page: 'whatsapp' | 'settings' | 'pro
   }
 
   return <>
-    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Tu bot usa únicamente tu WhatsApp y puede enviar mientras otras cuentas también envían. Iniciar, pausar o programar aquí solo afecta a tu cuenta."
+    <PageHeader eyebrow="CENTRO DE ENVÍOS" title="Envíos" subtitle="Tu bot usa tu WhatsApp. Al pausarlo, volverá a iniciar mañana a la hora configurada; usa Detener para cancelar el inicio automático."
       actions={<span className={`status-pill ${c.status}`}><i />{label}</span>} />
 
     {wa.state !== 'connected' && <div className="alert alert-warn"><WifiOff size={18} /><div><strong>WhatsApp no está conectado</strong><p>El envío no avanza hasta que vincules un número.</p></div><Button onClick={() => goto('whatsapp')}>Conectar</Button></div>}

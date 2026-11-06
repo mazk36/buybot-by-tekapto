@@ -552,7 +552,7 @@ export async function registerRoutes(app: FastifyInstance) {
         const result = campaign.schedule(who, (request.body as any)?.at)
         if (!result.ok) throw new HttpError(400, result.error)
       } else if (action === 'cancel-schedule') campaign.cancelSchedule(who)
-      else if (action === 'pause') campaign.pause(who)
+      else if (action === 'pause') campaign.pause(who, true)
       else if (action === 'stop') campaign.stop(who)
       else throw new HttpError(404, 'Acción no válida.')
       return queue.forUser(request.user!.id).snapshot()

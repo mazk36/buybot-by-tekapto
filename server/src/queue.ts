@@ -125,10 +125,20 @@ class Queue {
     return { ok: true }
   }
 
-  pause(actor: string) {
+  pause(actor: string, resumeTomorrow = false) {
     if (this.status !== 'running') return
     this.status = 'paused'
     this.persist()
+    if (resumeTomorrow) {
+      const [hour, minute] = getSettings().windowStart.split(':').map(Number)
+      const next = new Date()
+      next.setDate(next.getDate() + 1)
+      next.setHours(hour, minute, 0, 0)
+      this.scheduledAt = next.toISOString()
+      this.scheduleError = null
+      this.write('scheduled_at', this.scheduledAt)
+      this.write('schedule_error', '')
+    }
     this.setReason(null)
     audit(actor, 'campaign.pause', 'campaign', null, 'Pausó el envío')
   }

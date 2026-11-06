@@ -52,7 +52,7 @@ try{
  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM messages WHERE status='sent'").get() as any).n,1)
  assert.equal((db.prepare("SELECT COUNT(DISTINCT prospect_id) AS n FROM messages").get() as any).n,2)
  qb.nextAt=0;await qb.tick();assert.equal(qb.status,'running');assert.equal(qb.reason,'waiting')
- await req(1,'POST','/api/campaign/pause');assert.equal(qa.status,'running');assert.equal(qb.status,'paused')
+ await req(1,'POST','/api/campaign/pause');assert.equal(qa.status,'running');assert.equal(qb.status,'paused');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);tomorrow.setHours(0,0,0,0);assert.equal(qb.scheduledAt,tomorrow.toISOString())
  releaseSend!();await first;holdInstance=''
  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM messages WHERE status='sent'").get() as any).n,2)
  // Mix and schedules are scoped. Cancel/stop/disconnect on B never changes A.
